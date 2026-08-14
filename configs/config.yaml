@@ -1,0 +1,10 @@
+model: LSTMRULPredictor
+model_file: models/batteryml.ckpt
+technique: int8
+framework: torchao
+
+model_params:
+  in_channels: 1
+  channels: 32
+  input_height: 100
+  input_width: 1000
