@@ -8,6 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from torch.utils.data import DataLoader
+
+from comparison import compare_models
+from dataset_folder.myDataset import MyDataset
 import frameworks
 from frameworks.framework import Framework
 
@@ -158,6 +162,43 @@ def _resolve_model_path(model_file: str, base_dir: Path | None = None) -> Path:
     raise FileNotFoundError(f"Model file not found at {model_file}")
 
 
+def build_test_loader(dataset: Any = None, batch_size: int = 32, shuffle: bool = False):
+    """Create a DataLoader for the selected dataset's test split.
+
+    Works with:
+    - a dataset object with a .test attribute
+    - a dict like {'test': (X_test, y_test)}
+    - a raw (features, labels) tuple
+    - a custom dataset already returning (feature, label) or {'feature': ..., 'label': ...}
+    """
+    if dataset is None:
+        raise ValueError("A dataset object is required to build the test loader.")
+
+    if isinstance(dataset, MyDataset):
+        adapted = dataset
+        if getattr(adapted, "split", "train") != "test":
+            adapted = MyDataset(source=dataset, split="test")
+    elif hasattr(dataset, "test"):
+        adapted = MyDataset(source=dataset.test, split="test")
+    elif isinstance(dataset, dict) and "test" in dataset:
+        adapted = MyDataset(source=dataset["test"], split="test")
+    elif isinstance(dataset, (tuple, list)) and len(dataset) == 2:
+        adapted = MyDataset(features=dataset[0], labels=dataset[1], split="test")
+    elif hasattr(dataset, "__len__") and hasattr(dataset, "__getitem__"):
+        adapted = MyDataset(source=dataset, split="test")
+    else:
+        raise ValueError(
+            "Unsupported dataset format. Provide a dataset, a .test split, or a (features, labels) tuple."
+        )
+
+    return DataLoader(
+        adapted,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=0,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Test compression frameworks and techniques on deep learning models"
@@ -270,6 +311,18 @@ def main():
     print(f"Framework: {framework_name}")
     print(f"Loaded model: {model_original}")
     print(f"Compressed model: {model_compressed}")
+
+    # Replace `dataset` with the actual selected dataset object from your pipeline.
+    dataset = None
+    test_loader = build_test_loader(dataset, batch_size=32, shuffle=False)
+
+    comparison_results = compare_models(
+        model_original,
+        model_compressed,
+        test_loader,
+        device="cpu"
+    )
+    print("Comparison results:", comparison_results)
 
 
 if __name__ == "__main__":
