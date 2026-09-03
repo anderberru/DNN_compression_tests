@@ -3,6 +3,25 @@ model_file: models/batteryml.ckpt
 technique: int8
 framework: torchao
 
+# List every processed BatteryML CALCE pickle file. The program combines
+# them and creates one global train/test split.
+dataset_files:
+  - calce_processed/CALCE_CS2_33.pkl
+  - calce_processed/CALCE_CS2_34.pkl
+  - calce_processed/CALCE_CS2_35.pkl
+  - calce_processed/CALCE_CS2_36.pkl
+  - calce_processed/CALCE_CS2_37.pkl
+  - calce_processed/CALCE_CS2_38.pkl
+  - calce_processed/CALCE_CX2_16.pkl
+  - calce_processed/CALCE_CX2_33.pkl
+  - calce_processed/CALCE_CX2_34.pkl
+  - calce_processed/CALCE_CX2_35.pkl
+  - calce_processed/CALCE_CX2_36.pkl
+  - calce_processed/CALCE_CX2_37.pkl
+  - calce_processed/CALCE_CX2_38.pkl
+
+dataset_class: MyDataset
+
 model_params:
   in_channels: 1
   channels: 32
