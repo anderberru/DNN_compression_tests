@@ -25,9 +25,16 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
     compressed_model.eval()
 
     metrics = {
-        "mse": [],
-        "mae": [],
-        "max_abs_error": [],
+        "original": {
+            "mse": [],
+            "mae": [],
+            "max_abs_error": [],
+        },
+        "compressed": {
+            "mse": [],
+            "mae": [],
+            "max_abs_error": [],
+        },
     }
 
     for batch in dataloader:
@@ -42,9 +49,21 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
         y_orig = y_orig.reshape_as(label)
         y_comp = y_comp.reshape_as(label)
 
-        diff = y_orig - y_comp
-        metrics["mse"].append(torch.mean(diff.pow(2)).item())
-        metrics["mae"].append(torch.mean(torch.abs(diff)).item())
-        metrics["max_abs_error"].append(torch.max(torch.abs(diff)).item())
+        for model_name, prediction in (
+            ("original", y_orig),
+            ("compressed", y_comp),
+        ):
+            error = prediction - label
+            metrics[model_name]["mse"].append(torch.mean(error.pow(2)).item())
+            metrics[model_name]["mae"].append(torch.mean(torch.abs(error)).item())
+            metrics[model_name]["max_abs_error"].append(
+                torch.max(torch.abs(error)).item()
+            )
 
-    return {k: sum(v) / len(v) for k, v in metrics.items()}
+    return {
+        model_name: {
+            metric_name: sum(values) / len(values)
+            for metric_name, values in model_metrics.items()
+        }
+        for model_name, model_metrics in metrics.items()
+    }
