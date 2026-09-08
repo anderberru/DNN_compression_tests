@@ -25,10 +25,24 @@ def forward_generic(model, batch):
 def compute_comparison_metrics(metric_values, metric_name="abs_error_increase"):
 
     value = 0.0
-    if metric_name == "abs_error_increase":
-        value = metric_values["compressed"]["max_abs_error"] - metric_values["original"]["max_abs_error"]
+    metric_key_map = {
+        "abs_error_increase": "max_abs_error",
+        "mse_increase": "mse",
+        "mae_increase": "mae",
+        "rmse_increase": "rmse",
+        "mape_increase": "mape",
+    }
+    if metric_name in metric_key_map:
+        metric_key = metric_key_map[metric_name]
+        value = (
+            metric_values["compressed"][metric_key]
+            - metric_values["original"][metric_key]
+        )
     if metric_name == "speedup_factor":
-        value = metric_values["original"]["latency_ms_per_sample"] / metric_values["compressed"]["latency_ms_per_sample"]
+        value = (
+            metric_values["original"]["latency_ms_per_sample"]
+            / metric_values["compressed"]["latency_ms_per_sample"]
+        )
     return value
 
 def compare_models(original_model, compressed_model, dataloader, device="cpu"):
@@ -39,12 +53,16 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
         "original": {
             "mse": [],
             "mae": [],
+            "rmse": [],
+            "mape": [],
             "max_abs_error": [],
             # "latency_ms_per_sample": 0.0,
         },
         "compressed": {
             "mse": [],
             "mae": [],
+            "rmse": [],
+            "mape": [],
             "max_abs_error": [],
             # "latency_ms_per_sample": 0.0,
         },
@@ -83,8 +101,18 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
             ("compressed", y_comp),
         ):
             error = prediction - label
-            metrics[model_name]["mse"].append(torch.mean(error.pow(2)).item())
-            metrics[model_name]["mae"].append(torch.mean(torch.abs(error)).item())
+            mse_value = torch.mean(error.pow(2)).item()
+            mae_value = torch.mean(torch.abs(error)).item()
+            rmse_value = torch.sqrt(torch.tensor(mse_value, device=error.device)).item()
+            safe_denominator = torch.abs(label).clamp_min(torch.finfo(label.dtype).eps)
+            mape_value = (
+                torch.mean(torch.abs(error) / safe_denominator).item() * 100.0
+            )
+
+            metrics[model_name]["mse"].append(mse_value)
+            metrics[model_name]["mae"].append(mae_value)
+            metrics[model_name]["rmse"].append(rmse_value)
+            metrics[model_name]["mape"].append(mape_value)
             metrics[model_name]["max_abs_error"].append(
                 torch.max(torch.abs(error)).item()
             )
