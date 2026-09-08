@@ -1,3 +1,5 @@
+import time
+
 import torch
 
 
@@ -20,6 +22,15 @@ def forward_generic(model, batch):
         except TypeError:
             return model(feature)
 
+def compute_comparison_metrics(metric_values, metric_name="abs_error_increase"):
+
+    value = 0.0
+    if metric_name == "abs_error_increase":
+        value = metric_values["compressed"]["max_abs_error"] - metric_values["original"]["max_abs_error"]
+    if metric_name == "speedup_factor":
+        value = metric_values["original"]["latency_ms_per_sample"] / metric_values["compressed"]["latency_ms_per_sample"]
+    return value
+
 def compare_models(original_model, compressed_model, dataloader, device="cpu"):
     original_model.eval()
     compressed_model.eval()
@@ -29,22 +40,40 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
             "mse": [],
             "mae": [],
             "max_abs_error": [],
+            # "latency_ms_per_sample": 0.0,
         },
         "compressed": {
             "mse": [],
             "mae": [],
             "max_abs_error": [],
+            # "latency_ms_per_sample": 0.0,
         },
     }
+    sample_count = 0
+    inference_time = {"original": 0.0, "compressed": 0.0}
 
     for batch in dataloader:
         feature, label = unpack_batch(batch)
 
         feature = feature.to(device)
         label = label.to(device)
+        sample_count += feature.shape[0]
 
+        if feature.is_cuda:
+            torch.cuda.synchronize(feature.device)
+        start_time = time.perf_counter()
         y_orig = forward_generic(original_model, {"feature": feature, "label": label})
+        if feature.is_cuda:
+            torch.cuda.synchronize(feature.device)
+        inference_time["original"] += time.perf_counter() - start_time
+
+        if feature.is_cuda:
+            torch.cuda.synchronize(feature.device)
+        start_time = time.perf_counter()
         y_comp = forward_generic(compressed_model, {"feature": feature, "label": label})
+        if feature.is_cuda:
+            torch.cuda.synchronize(feature.device)
+        inference_time["compressed"] += time.perf_counter() - start_time
 
         y_orig = y_orig.reshape_as(label)
         y_comp = y_comp.reshape_as(label)
@@ -60,10 +89,16 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
                 torch.max(torch.abs(error)).item()
             )
 
-    return {
+    comparison_results = {
         model_name: {
             metric_name: sum(values) / len(values)
             for metric_name, values in model_metrics.items()
         }
         for model_name, model_metrics in metrics.items()
     }
+    for model_name in comparison_results:
+        comparison_results[model_name]["latency_ms_per_sample"] = (
+            inference_time[model_name] * 1000 / sample_count
+        )
+
+    return comparison_results

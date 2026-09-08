@@ -10,7 +10,7 @@ from typing import Any
 
 from torch.utils.data import ConcatDataset, DataLoader
 
-from comparison import compare_models
+from comparison import compare_models, compute_comparison_metrics
 from dataset_folder.myDataset import MyDataset
 import frameworks
 from frameworks.framework import Framework
@@ -473,11 +473,7 @@ def main():
         shuffle=False,
         feature_length=model_params.get("input_width"),
     )
-    # print("First test sample:")
-    # for index, sample in enumerate(test_loader.dataset):
-    #     if index == 1:
-    #         break
-    #     print(index, sample)
+  
 
     comparison_results = compare_models(
         model_original,
@@ -485,7 +481,11 @@ def main():
         test_loader,
         device="cpu"
     )
-    print("Comparison results:", comparison_results)
+    print("Comparison results:")
+    print(json.dumps(comparison_results, indent=4))
+
+    final_results = compute_comparison_metrics(comparison_results, metric_name="speedup_factor")
+    print("Final comparison metric (speedup_factor):", final_results)
 
 
 if __name__ == "__main__":
