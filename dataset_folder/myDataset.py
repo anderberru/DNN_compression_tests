@@ -33,12 +33,17 @@ class MyDataset(Dataset):
         feature_key: str = "feature",
         label_key: str = "label",
         feature_length: int | None = None,
+        sequence_length: int | None = None,
     ) -> None:
         self.split = str(split).lower()
         self.feature_key = feature_key
         self.label_key = label_key
         self.train_ratio = train_ratio
         self.feature_length = feature_length
+        self.sequence_length = sequence_length
+
+        if sequence_length is not None and sequence_length < 1:
+            raise ValueError("sequence_length must be positive")
 
         if not 0 < train_ratio < 1:
             raise ValueError("train_ratio must be between 0 and 1")
@@ -213,20 +218,67 @@ class MyDataset(Dataset):
     def __len__(self) -> int:
         if self._wrapped_dataset is not None:
             if self._indices is not None:
-                return len(self._indices)
-            return len(self._wrapped_dataset)
+                length = len(self._indices)
+            else:
+                length = len(self._wrapped_dataset)
+            if self.sequence_length is not None:
+                return max(0, length - self.sequence_length + 1)
+            return length
         if self.features is not None:
-            return len(self.features)
+            length = len(self.features)
+            if self.sequence_length is not None:
+                return max(0, length - self.sequence_length + 1)
+            return length
         return 0
 
     def __getitem__(self, index: int):
         if self._wrapped_dataset is not None:
             if self._indices is not None:
-                index = self._indices[index]
+                if self.sequence_length is None:
+                    index = self._indices[index]
+                else:
+                    end = index + self.sequence_length
+                    indices = self._indices[index:end]
+                    samples = [
+                        self._normalize_sample(self._wrapped_dataset[item])
+                        for item in indices
+                    ]
+                    features = torch.stack([item["feature"] for item in samples])
+                    if features.ndim == 3 and features.shape[1] == 1:
+                        features = features.squeeze(1)
+                    return {
+                        "feature": features,
+                        "label": samples[-1]["label"],
+                    }
+            elif self.sequence_length is not None:
+                samples = [
+                    self._normalize_sample(self._wrapped_dataset[item])
+                    for item in range(index, index + self.sequence_length)
+                ]
+                features = torch.stack([item["feature"] for item in samples])
+                if features.ndim == 3 and features.shape[1] == 1:
+                    features = features.squeeze(1)
+                return {
+                    "feature": features,
+                    "label": samples[-1]["label"],
+                }
             sample = self._wrapped_dataset[index]
             return self._normalize_sample(sample)
 
         if self.features is not None and self.labels is not None:
+            if self.sequence_length is not None:
+                end = index + self.sequence_length
+                features = [
+                    self._fit_feature_length(feature)
+                    for feature in self.features[index:end]
+                ]
+                features = torch.stack(features)
+                if features.ndim == 3 and features.shape[1] == 1:
+                    features = features.squeeze(1)
+                return {
+                    "feature": features,
+                    "label": self.labels[end - 1],
+                }
             return {
                 "feature": self._fit_feature_length(self.features[index]),
                 "label": self.labels[index],

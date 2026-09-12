@@ -2,6 +2,7 @@ import argparse
 import copy
 import importlib
 import inspect
+import itertools
 import json
 import pkgutil
 import sys
@@ -98,6 +99,18 @@ def _parse_model_params(raw_model_params: Any) -> dict[str, Any]:
     return raw_model_params
 
 
+def _get_model_params(model_params: dict[str, Any], model_name: str) -> dict[str, Any]:
+    model_specific_params = model_params.get(model_name)
+    if model_specific_params is None:
+        if any(isinstance(value, dict) for value in model_params.values()):
+            raise ValueError(f"No model_params entry found for model '{model_name}'")
+        return model_params
+
+    if not isinstance(model_specific_params, dict):
+        raise ValueError(f"model_params['{model_name}'] must be a dictionary")
+    return model_specific_params
+
+
 def _merge_runtime_config(config: dict[str, Any] | None, cli_args: dict[str, Any]) -> dict[str, Any]:
     merged = dict(config or {})
     runtime = {
@@ -119,6 +132,12 @@ def _merge_runtime_config(config: dict[str, Any] | None, cli_args: dict[str, Any
             cli_model_params = _parse_model_params(value)
             yaml_model_params.update(cli_model_params)
             merged[key] = yaml_model_params
+        elif key in {"model", "technique", "framework", "model_file"} and isinstance(value, str):
+            try:
+                parsed_value = json.loads(value)
+            except json.JSONDecodeError:
+                parsed_value = value
+            merged[key] = parsed_value
         elif key == "dataset_files" and isinstance(value, str):
             merged[key] = json.loads(value)
         else:
@@ -276,6 +295,7 @@ def build_test_loader(
     batch_size: int = 32,
     shuffle: bool = False,
     feature_length: int | None = None,
+    sequence_length: int | None = None,
 ):
     """Create a DataLoader for the selected dataset's test split.
 
@@ -292,21 +312,43 @@ def build_test_loader(
         adapted = dataset
         if feature_length is not None:
             adapted.feature_length = feature_length
+        adapted.sequence_length = sequence_length
         if getattr(adapted, "split", "train") != "test":
-            adapted = MyDataset(source=dataset, split="test", feature_length=feature_length)
+            adapted = MyDataset(
+                source=dataset,
+                split="test",
+                feature_length=feature_length,
+                sequence_length=sequence_length,
+            )
     elif hasattr(dataset, "test"):
-        adapted = MyDataset(source=dataset.test, split="test", feature_length=feature_length)
+        adapted = MyDataset(
+            source=dataset.test,
+            split="test",
+            feature_length=feature_length,
+            sequence_length=sequence_length,
+        )
     elif isinstance(dataset, dict) and "test" in dataset:
-        adapted = MyDataset(source=dataset["test"], split="test", feature_length=feature_length)
+        adapted = MyDataset(
+            source=dataset["test"],
+            split="test",
+            feature_length=feature_length,
+            sequence_length=sequence_length,
+        )
     elif isinstance(dataset, (tuple, list)) and len(dataset) == 2:
         adapted = MyDataset(
             features=dataset[0],
             labels=dataset[1],
             split="test",
             feature_length=feature_length,
+            sequence_length=sequence_length,
         )
     elif hasattr(dataset, "__len__") and hasattr(dataset, "__getitem__"):
-        adapted = MyDataset(source=dataset, split="test", feature_length=feature_length)
+        adapted = MyDataset(
+            source=dataset,
+            split="test",
+            feature_length=feature_length,
+            sequence_length=sequence_length,
+        )
     else:
         raise ValueError(
             "Unsupported dataset format. Provide a dataset, a .test split, or a (features, labels) tuple."
@@ -318,6 +360,39 @@ def build_test_loader(
         shuffle=shuffle,
         num_workers=0,
     )
+
+
+def _as_grid_values(value: Any, name: str) -> list[Any]:
+    values = value if isinstance(value, list) else [value]
+    if not values or any(item is None for item in values):
+        raise ValueError(f"{name} must contain at least one value")
+    return values
+
+
+def _print_results_table(results: list[dict[str, Any]]) -> None:
+    columns = [
+        "model",
+        "framework",
+        "technique",
+        "speedup_factor",
+        "mse_increase",
+        "mae_increase",
+        "rmse_increase",
+        "mape_increase",
+        "abs_error_increase",
+    ]
+    rows = [[str(result.get(column, "")) for column in columns] for result in results]
+    widths = [
+        max(len(column), *(len(row[index]) for row in rows))
+        for index, column in enumerate(columns)
+    ]
+    separator = "-+-".join("-" * width for width in widths)
+
+    print("\nGrid search results:")
+    print(" | ".join(column.ljust(width) for column, width in zip(columns, widths)))
+    print(separator)
+    for row in rows:
+        print(" | ".join(value.ljust(width) for value, width in zip(row, widths)))
 
 
 def main():
@@ -399,36 +474,7 @@ def main():
             "Missing required arguments/config values for: " + ", ".join(missing)
         )
 
-    model_name = runtime_config["model"]
-    technique = runtime_config["technique"]
-    framework_name = runtime_config["framework"]
     model_params = _parse_model_params(runtime_config.get("model_params", {}))
-
-    print(f"Available models: {list(model_list.keys())}")
-    model_class = model_list.get(model_name)
-
-    if model_class is None:
-        print(f"Error: Model '{model_name}' not found.")
-        sys.exit(1)
-
-    try:
-        model = model_class(**model_params)
-    except Exception as exc:
-        print(f"Error instantiating model '{model_name}': {exc}")
-        sys.exit(1)
-
-    model_file = runtime_config.get("model_file")
-    if model_file:
-        try:
-            resolved_path = _resolve_model_path(model_file, base_dir=Path(config_path).resolve().parent if config_path else None)
-            if resolved_path.suffix.lower() not in {".pth", ".pt", ".ckpt", ".bin"}:
-                raise ValueError("Only pretrained checkpoint files are supported")
-
-            model = _load_pretrained_model(resolved_path, model)
-        except Exception as exc:
-            print(f"Error loading model: {exc}")
-            sys.exit(1)
-
     framework_list = {
         cls.__name__: cls
         for cls in Framework.__subclasses__()
@@ -436,23 +482,17 @@ def main():
 
     print(f"Available frameworks: {list(framework_list.keys())}")
 
-    framework_class = framework_list.get(framework_name.lower().capitalize())
-    if framework_class is None:
-        print(
-            f"Error: Framework '{framework_name}' not found in available frameworks: "
-            f"{list(framework_list.keys())}"
-        )
-        sys.exit(1)
+    model_names = _as_grid_values(runtime_config["model"], "model")
+    techniques = _as_grid_values(runtime_config["technique"], "technique")
+    framework_names = _as_grid_values(runtime_config["framework"], "framework")
+    model_files = _as_grid_values(runtime_config.get("model_file"), "model_file") if runtime_config.get("model_file") else [None]
 
-    framework_instance = framework_class(technique=technique)
-    model_original = copy.deepcopy(model)
-    model_compressed = framework_instance.compress(model, technique=technique)
+    if len(model_files) not in {1, len(model_names)}:
+        raise ValueError("model_file must contain one path or one path per model")
 
-    print(f"Model: {model_file}")
-    print(f"Technique: {technique}")
-    print(f"Framework: {framework_name}")
-    print(f"Loaded model: {model_original}")
-    print(f"Compressed model: {model_compressed}")
+    model_file_by_name = dict(zip(model_names, model_files)) if len(model_files) > 1 else {
+        model_name: model_files[0] for model_name in model_names
+    }
 
     dataset_path = runtime_config.get("dataset_path")
     dataset_files = runtime_config.get("dataset_files")
@@ -467,25 +507,81 @@ def main():
         print(f"Error loading dataset: {exc}")
         sys.exit(1)
 
-    test_loader = build_test_loader(
-        dataset,
-        batch_size=32,
-        shuffle=False,
-        feature_length=model_params.get("input_width"),
-    )
-  
+    grid_results = []
+    for model_name, framework_name, technique in itertools.product(
+        model_names, framework_names, techniques
+    ):
+        model_class = model_list.get(model_name)
+        if model_class is None:
+            raise ValueError(f"Model '{model_name}' not found")
 
-    comparison_results = compare_models(
-        model_original,
-        model_compressed,
-        test_loader,
-        device="cpu"
-    )
-    print("Comparison results:")
-    print(json.dumps(comparison_results, indent=4))
+        framework_class = framework_list.get(framework_name.lower().capitalize())
+        if framework_class is None:
+            raise ValueError(
+                f"Framework '{framework_name}' not found in available frameworks: "
+                f"{list(framework_list.keys())}"
+            )
 
-    final_results = compute_comparison_metrics(comparison_results, metric_name="speedup_factor")
-    print("Final comparison metric (speedup_factor):", final_results)
+        current_model_params = _get_model_params(model_params, model_name)
+        model = model_class(**current_model_params)
+        model_file = model_file_by_name[model_name]
+        if model_file:
+            resolved_path = _resolve_model_path(
+                model_file,
+                base_dir=Path(config_path).resolve().parent if config_path else None,
+            )
+            if resolved_path.suffix.lower() not in {".pth", ".pt", ".ckpt", ".bin"}:
+                raise ValueError("Only pretrained checkpoint files are supported")
+            model = _load_pretrained_model(resolved_path, model)
+
+        framework_instance = framework_class(technique=technique)
+        model_original = copy.deepcopy(model)
+        model_compressed = framework_instance.compress(model, technique=technique)
+
+        test_loader = build_test_loader(
+            dataset,
+            batch_size=32,
+            shuffle=False,
+            feature_length=current_model_params.get("input_width"),
+            sequence_length=(
+                current_model_params.get("input_height")
+                if model_name == "TransformerRULPredictor"
+                else None
+            ),
+        )
+
+        # print("Original model:", model_original)
+        # print("Compressed model:", model_compressed)
+
+        comparison_results = compare_models(
+            model_original,
+            model_compressed,
+            test_loader,
+            device="cpu",
+        )
+
+        grid_results.append(
+            {
+                "model": model_name,
+                "framework": framework_name,
+                "technique": technique,
+                **{
+                    metric_name: compute_comparison_metrics(
+                        comparison_results, metric_name=metric_name
+                    )
+                    for metric_name in (
+                        "speedup_factor",
+                        "mse_increase",
+                        "mae_increase",
+                        "rmse_increase",
+                        "mape_increase",
+                        "abs_error_increase",
+                    )
+                },
+            }
+        )
+
+    _print_results_table(grid_results)
 
 
 if __name__ == "__main__":

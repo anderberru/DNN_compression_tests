@@ -1,7 +1,13 @@
-model: LSTMRULPredictor
-model_file: models/batteryml.ckpt
-technique: int8
-framework: torchao
+model:
+  - LSTMRULPredictor
+  - TransformerRULPredictor
+model_file:
+  - models/lstm.ckpt
+  - models/transformer.ckpt
+technique:
+  - int8
+framework:
+  - torchao
 
 # List every processed BatteryML CALCE pickle file. The program combines
 # them and creates one global train/test split.
@@ -23,7 +29,13 @@ dataset_files:
 dataset_class: MyDataset
 
 model_params:
-  in_channels: 1
-  channels: 32
-  input_height: 100
-  input_width: 1000
+  LSTMRULPredictor:
+    in_channels: 1
+    channels: 32
+    input_height: 100
+    input_width: 1000
+  TransformerRULPredictor:
+    in_channels: 1
+    channels: 32
+    input_height: 100
+    input_width: 1000
