@@ -485,6 +485,12 @@ def main():
     model_names = _as_grid_values(runtime_config["model"], "model")
     techniques = _as_grid_values(runtime_config["technique"], "technique")
     framework_names = _as_grid_values(runtime_config["framework"], "framework")
+    if len(framework_names) != len(techniques):
+        raise ValueError(
+            "framework and technique must contain the same number of entries "
+            "because they are paired by position"
+        )
+    compression_configs = list(zip(framework_names, techniques))
     model_files = _as_grid_values(runtime_config.get("model_file"), "model_file") if runtime_config.get("model_file") else [None]
 
     if len(model_files) not in {1, len(model_names)}:
@@ -508,8 +514,8 @@ def main():
         sys.exit(1)
 
     grid_results = []
-    for model_name, framework_name, technique in itertools.product(
-        model_names, framework_names, techniques
+    for model_name, (framework_name, technique) in itertools.product(
+        model_names, compression_configs
     ):
         model_class = model_list.get(model_name)
         if model_class is None:

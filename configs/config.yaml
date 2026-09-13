@@ -6,11 +6,11 @@ model_file:
   - models/transformer.ckpt
 technique:
   - int8
+  - float8_weight_only
 framework:
   - torchao
+  - torchao
 
-# List every processed BatteryML CALCE pickle file. The program combines
-# them and creates one global train/test split.
 dataset_files:
   - calce_processed/CALCE_CS2_33.pkl
   - calce_processed/CALCE_CS2_34.pkl
