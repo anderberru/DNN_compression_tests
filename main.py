@@ -1,5 +1,6 @@
 import argparse
 import copy
+import csv
 import importlib
 import inspect
 import itertools
@@ -122,6 +123,7 @@ def _merge_runtime_config(config: dict[str, Any] | None, cli_args: dict[str, Any
         "dataset_path": cli_args.get("dataset_path"),
         "dataset_files": cli_args.get("dataset_files"),
         "dataset_class": cli_args.get("dataset_class"),
+        "csv_output": cli_args.get("csv_output"),
     }
 
     for key, value in runtime.items():
@@ -370,17 +372,7 @@ def _as_grid_values(value: Any, name: str) -> list[Any]:
 
 
 def _print_results_table(results: list[dict[str, Any]]) -> None:
-    columns = [
-        "model",
-        "framework",
-        "technique",
-        "speedup_factor",
-        "mse_increase",
-        "mae_increase",
-        "rmse_increase",
-        "mape_increase",
-        "abs_error_increase",
-    ]
+    columns = _result_columns(results)
     rows = [[str(result.get(column, "")) for column in columns] for result in results]
     widths = [
         max(len(column), *(len(row[index]) for row in rows))
@@ -393,6 +385,38 @@ def _print_results_table(results: list[dict[str, Any]]) -> None:
     print(separator)
     for row in rows:
         print(" | ".join(value.ljust(width) for value, width in zip(row, widths)))
+
+
+def _result_columns(results: list[dict[str, Any]]) -> list[str]:
+    identity_columns = [
+        "model",
+        "framework",
+        "technique",
+    ]
+    metric_columns = []
+    for result in results:
+        for column in result:
+            if column not in identity_columns and column not in metric_columns:
+                metric_columns.append(column)
+    return identity_columns + metric_columns
+
+
+def _export_results_csv(results: list[dict[str, Any]], output_path: str | Path) -> Path:
+    path = Path(output_path)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    columns = _result_columns(results)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(
+            {column: result.get(column, "") for column in columns}
+            for result in results
+        )
+
+    return path
 
 
 def main():
@@ -452,6 +476,12 @@ def main():
         type=str,
         default=None,
         help="Optional class name inside the dataset module to instantiate"
+    )
+    parser.add_argument(
+        "--csv-output",
+        type=str,
+        default=None,
+        help="Path for the grid search CSV output (default: grid_results.csv)"
     )
 
     args = parser.parse_args()
@@ -588,6 +618,9 @@ def main():
         )
 
     _print_results_table(grid_results)
+    csv_output = runtime_config.get("csv_output") or "grid_results.csv"
+    csv_path = _export_results_csv(grid_results, csv_output)
+    print(f"Grid search results exported to {csv_path}")
 
 
 if __name__ == "__main__":
