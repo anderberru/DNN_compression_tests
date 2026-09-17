@@ -371,6 +371,17 @@ def _as_grid_values(value: Any, name: str) -> list[Any]:
     return values
 
 
+def _parse_compression_pipeline(technique: Any, framework: Any) -> list[tuple[str, str]]:
+    techniques = [item.strip() for item in str(technique).split(",") if item.strip()]
+    frameworks = [item.strip() for item in str(framework).split(",") if item.strip()]
+    if not techniques or not frameworks or len(techniques) != len(frameworks):
+        raise ValueError(
+            "Each technique entry must contain the same number of comma-separated "
+            "techniques as its framework entry"
+        )
+    return list(zip(techniques, frameworks))
+
+
 def _print_results_table(results: list[dict[str, Any]]) -> None:
     columns = _result_columns(results)
     rows = [[str(result.get(column, "")) for column in columns] for result in results]
@@ -445,13 +456,13 @@ def main():
         "--technique",
         type=str,
         default=None,
-        help="Compression technique to apply (e.g., pruning, quantization, distillation)"
+        help="Compression technique(s); separate sequential techniques with commas"
     )
     parser.add_argument(
         "--framework",
         type=str,
         default=None,
-        help="Compression framework to use"
+        help="Compression framework(s), paired by position with comma-separated techniques"
     )
     parser.add_argument(
         "--model-params",
@@ -481,7 +492,7 @@ def main():
         "--csv-output",
         type=str,
         default=None,
-        help="Path for the grid search CSV output (default: grid_results.csv)"
+        help="Path for the grid search CSV output (default: results/<config>_results.csv)"
     )
 
     args = parser.parse_args()
@@ -551,20 +562,6 @@ def main():
         if model_class is None:
             raise ValueError(f"Model '{model_name}' not found")
 
-        framework_class = next(
-            (
-                framework
-                for name, framework in framework_list.items()
-                if name.casefold() == str(framework_name).casefold()
-            ),
-            None,
-        )
-        if framework_class is None:
-            raise ValueError(
-                f"Framework '{framework_name}' not found in available frameworks: "
-                f"{list(framework_list.keys())}"
-            )
-
         current_model_params = _get_model_params(model_params, model_name)
         model = model_class(**current_model_params)
         model_file = model_file_by_name[model_name]
@@ -577,7 +574,6 @@ def main():
                 raise ValueError("Only pretrained checkpoint files are supported")
             model = _load_pretrained_model(resolved_path, model)
 
-        framework_instance = framework_class(technique=technique)
         model_original = copy.deepcopy(model)
 
         test_loader = build_test_loader(
@@ -595,11 +591,29 @@ def main():
         first_batch = next(iter(test_loader))
         dummy_feature, dummy_label = unpack_batch(first_batch)
         dummy_input = (dummy_feature[:1], dummy_label[:1])
-        model_compressed = framework_instance.compress(
-            model,
-            technique=technique,
-            dummy_input=dummy_input,
-        )
+        compression_pipeline = _parse_compression_pipeline(technique, framework_name)
+        model_compressed = model
+        for pipeline_technique, pipeline_framework in compression_pipeline:
+            framework_class = next(
+                (
+                    framework
+                    for name, framework in framework_list.items()
+                    if name.casefold() == pipeline_framework.casefold()
+                ),
+                None,
+            )
+            if framework_class is None:
+                raise ValueError(
+                    f"Framework '{pipeline_framework}' not found in available frameworks: "
+                    f"{list(framework_list.keys())}"
+                )
+
+            framework_instance = framework_class(technique=pipeline_technique)
+            model_compressed = framework_instance.compress(
+                model_compressed,
+                technique=pipeline_technique,
+                dummy_input=dummy_input,
+            )
 
         # print("Original model:", model_original)
         # print("Compressed model:", model_compressed)
@@ -614,8 +628,12 @@ def main():
         grid_results.append(
             {
                 "model": model_name,
-                "framework": framework_name,
-                "technique": technique,
+                "framework": "->".join(
+                    pipeline_framework for _, pipeline_framework in compression_pipeline
+                ),
+                "technique": "->".join(
+                    pipeline_technique for pipeline_technique, _ in compression_pipeline
+                ),
                 **{
                     metric_name: compute_comparison_metrics(
                         comparison_results, metric_name=metric_name
@@ -633,7 +651,8 @@ def main():
         )
 
     _print_results_table(grid_results)
-    csv_output = runtime_config.get("csv_output") or "grid_results.csv"
+    default_csv_output = Path("results") / f"{config_path.stem}_results.csv"
+    csv_output = runtime_config.get("csv_output") or default_csv_output
     csv_path = _export_results_csv(grid_results, csv_output)
     print(f"Grid search results exported to {csv_path}")
 
