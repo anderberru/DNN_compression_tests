@@ -12,7 +12,7 @@ from typing import Any
 
 from torch.utils.data import ConcatDataset, DataLoader
 
-from comparison import compare_models, compute_comparison_metrics
+from comparison import compare_models, compute_comparison_metrics, unpack_batch
 from dataset_folder.myDataset import MyDataset
 import frameworks
 from frameworks.framework import Framework
@@ -551,7 +551,14 @@ def main():
         if model_class is None:
             raise ValueError(f"Model '{model_name}' not found")
 
-        framework_class = framework_list.get(framework_name.lower().capitalize())
+        framework_class = next(
+            (
+                framework
+                for name, framework in framework_list.items()
+                if name.casefold() == str(framework_name).casefold()
+            ),
+            None,
+        )
         if framework_class is None:
             raise ValueError(
                 f"Framework '{framework_name}' not found in available frameworks: "
@@ -572,7 +579,6 @@ def main():
 
         framework_instance = framework_class(technique=technique)
         model_original = copy.deepcopy(model)
-        model_compressed = framework_instance.compress(model, technique=technique)
 
         test_loader = build_test_loader(
             dataset,
@@ -584,6 +590,15 @@ def main():
                 if model_name == "TransformerRULPredictor"
                 else None
             ),
+        )
+
+        first_batch = next(iter(test_loader))
+        dummy_feature, dummy_label = unpack_batch(first_batch)
+        dummy_input = (dummy_feature[:1], dummy_label[:1])
+        model_compressed = framework_instance.compress(
+            model,
+            technique=technique,
+            dummy_input=dummy_input,
         )
 
         # print("Original model:", model_original)

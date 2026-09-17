@@ -6,10 +6,10 @@ model_file:
   - models/transformer.ckpt
 technique:
   - int8
-  - float8_weight_only
+  - prune
 framework:
   - torchao
-  - torchao
+  - ModelOptimizer
 
 dataset_files:
   - calce_processed/CALCE_CS2_33.pkl
