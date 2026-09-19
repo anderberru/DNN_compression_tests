@@ -6,7 +6,7 @@ model_file:
   - models/transformer.ckpt
 technique:
   - prune, int8
-  - prune
+  - KV_Cache_FP8
 framework:
   - ModelOptimizer, torchao
   - ModelOptimizer
