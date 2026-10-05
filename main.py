@@ -13,6 +13,7 @@ from typing import Any
 from torch.utils.data import ConcatDataset, DataLoader
 
 from comparison import compare_models, compute_comparison_metrics, unpack_batch
+from conversion import convert_pytorch_to_keras
 from dataset_folder.myDataset import MyDataset
 import frameworks
 from frameworks.framework import Framework
@@ -494,6 +495,17 @@ def main():
         default=None,
         help="Path for the grid search CSV output (default: results/<config>_results.csv)"
     )
+    parser.add_argument(
+        "--convert-to-keras",
+        action="store_true",
+        help="Convert each loaded PyTorch model to Keras through ONNX",
+    )
+    parser.add_argument(
+        "--onnx-output",
+        type=str,
+        default=None,
+        help="Optional ONNX path used during PyTorch-to-Keras conversion",
+    )
 
     args = parser.parse_args()
 
@@ -591,6 +603,14 @@ def main():
         first_batch = next(iter(test_loader))
         dummy_feature, dummy_label = unpack_batch(first_batch)
         dummy_input = (dummy_feature[:1], dummy_label[:1])
+        if args.convert_to_keras:
+            keras_model = convert_pytorch_to_keras(
+                model,
+                dummy_input,
+                output_path=args.onnx_output,
+            )
+            print(f"Converted {model_name} to Keras: {keras_model.__class__.__name__}")
+        
         compression_pipeline = _parse_compression_pipeline(technique, framework_name)
         model_compressed = model
         for pipeline_technique, pipeline_framework in compression_pipeline:
