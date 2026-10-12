@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
-
+from .calibrate_model import calibrate_model
 
 class Framework(ABC):
     """Base compression framework interface.

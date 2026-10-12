@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any
 
 from .framework import Framework
-
+from .calibrate_model import calibrate_model
 
 class OptimumQuanto(Framework):
     """Post-training quantization with Hugging Face Optimum Quanto."""

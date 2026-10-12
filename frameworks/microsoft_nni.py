@@ -2,16 +2,16 @@ from copy import deepcopy
 from typing import Any
 
 from .framework import Framework
-
+from .calibrate_model import calibrate_model
 
 class MicrosoftNNI(Framework):
-    """Post-training quantization with Microsoft NNI."""
+    """Post-training compression with Microsoft NNI."""
 
     def __init__(self, technique: str, **kwargs: Any) -> None:
         super().__init__(technique=technique, **kwargs)
 
     def compress(self, model: Any, technique: str, **kwargs: Any) -> Any:
-        """Calibrate and quantize a PyTorch model using NNI's PTQ quantizer."""
+        """Compress a PyTorch model using NNI's PTQ quantizer or Pruners."""
         if technique != self.technique:
             raise ValueError(
                 f"Technique mismatch: expected {self.technique!r}, got {technique!r}"
@@ -20,22 +20,83 @@ class MicrosoftNNI(Framework):
         try:
             import torch
             import nni
-            import nni.compression.quantization as nni_quantization
-            from nni.compression.utils import TorchEvaluator
         except ImportError as exc:
             raise RuntimeError(
-                "Microsoft NNI PTQ requires PyTorch and NNI with compression "
+                "Microsoft NNI requires PyTorch and NNI with compression "
                 "support. Install with `pip install nni`."
             ) from exc
 
         if not isinstance(model, torch.nn.Module):
-            raise TypeError("Microsoft NNI PTQ requires a torch.nn.Module model.")
+            raise TypeError("Microsoft NNI requires a torch.nn.Module model.")
 
         config = {**self.config, **kwargs}
+        technique_name = technique.casefold()
+        inplace = bool(config.pop("inplace", False))
+
+        pruning_formats = {
+            "prune", "pruning", "level", "magnitude", 
+            "l1", "l1norm", "l2", "l2norm", "fpgm"
+        }
+
+        # Pruning
+        if technique_name in pruning_formats:
+            try:
+                import nni.compression.pruning as nni_pruning
+            except ImportError as exc:
+                raise RuntimeError("NNI pruning modules could not be loaded.") from exc
+
+            config_list = config.pop("config_list", None)
+            target_sparsity = float(config.pop("target_sparsity", 0.5))
+
+            config.pop("dummy_input", None)
+            config.pop("calibration_dataset", None)
+            config.pop("calibration_steps", None)
+
+            if config_list is None:
+                config_list = [{
+                    "op_types": ["Linear", "Conv2d"],
+                    "sparse_ratio": target_sparsity
+                }]
+            elif not isinstance(config_list, list):
+                raise TypeError("config_list must be a list of NNI pruning configs")
+
+            if config:
+                raise TypeError(
+                    "Unsupported Microsoft NNI pruning configuration options: "
+                    f"{', '.join(sorted(config))}"
+                )
+
+            pruned_model = model if inplace else deepcopy(model)
+
+            # Pruning technique selection
+            if technique_name in {"prune", "pruning", "level", "magnitude"}:
+                pruner = nni_pruning.LevelPruner(pruned_model, config_list)
+            elif technique_name in {"l1", "l1norm"}:
+                pruner = nni_pruning.L1NormPruner(pruned_model, config_list)
+            elif technique_name in {"l2", "l2norm"}:
+                pruner = nni_pruning.L2NormPruner(pruned_model, config_list)
+            elif technique_name == "fpgm":
+                pruner = nni_pruning.FPGMPruner(pruned_model, config_list)
+            else:
+                raise ValueError(f"Unsupported NNI pruning technique: {technique}")
+
+            # Execute compression and consolidate the model (removes NNI wrappers)
+            compressed_model, _ = pruner.compress()
+            pruner.unwrap_model()
+            
+            return compressed_model
+
+        # Quantization (PTQ)
+        try:
+            import nni.compression.quantization as nni_quantization
+            from nni.compression.utils import TorchEvaluator
+        except ImportError as exc:
+            raise RuntimeError("NNI quantization modules could not be loaded.") from exc
+
         calibration_dataset = config.pop("calibration_dataset", None)
         dummy_input = config.pop("dummy_input", None)
         config_list = config.pop("config_list", None)
-        technique_name = technique.casefold()
+        
         if technique_name in {"ptq", "int", "int8"}:
             technique_dtype = "int8"
         elif technique_name in {"uint", "uint8"}:
@@ -55,10 +116,11 @@ class MicrosoftNNI(Framework):
             raise ValueError(
                 f"Unsupported Microsoft NNI quantization technique: {technique}"
             )
+            
         quant_dtype = str(config.pop("quant_dtype", technique_dtype)).lower()
         quant_scheme = config.pop("quant_scheme", "symmetric")
         calibration_steps = int(config.pop("calibration_steps", 300))
-        inplace = bool(config.pop("inplace", False))
+        
         if config:
             raise TypeError(
                 "Unsupported Microsoft NNI configuration options: "
@@ -162,3 +224,4 @@ class MicrosoftNNI(Framework):
         )
         quantized_model, _ = quantizer.compress(calibration_steps, None)
         return quantized_model
+    

@@ -1,6 +1,7 @@
 from typing import Any
 
 from .framework import Framework
+from .calibrate_model import calibrate_model
 
 
 class ExampleFramework(Framework):
