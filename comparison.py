@@ -80,6 +80,7 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)
         start_time = time.perf_counter()
+        # print(f"FORMA DEL DATO EN EVALUACIÓN: {feature.shape}")
         y_orig = forward_generic(original_model, {"feature": feature, "label": label})
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)

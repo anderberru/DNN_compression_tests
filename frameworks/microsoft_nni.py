@@ -81,10 +81,20 @@ class MicrosoftNNI(Framework):
                 raise ValueError(f"Unsupported NNI pruning technique: {technique}")
 
             # Execute compression and consolidate the model (removes NNI wrappers)
-            compressed_model, _ = pruner.compress()
+            _, masks = pruner.compress()
             pruner.unwrap_model()
             
-            return compressed_model
+            
+            # Permanently inject zeros into the PyTorch model weights
+            with torch.no_grad():
+                for name, module in pruned_model.named_modules():
+                    # NNI stores the mask with the module name
+                    if name in masks and 'weight' in masks[name]:
+                        # We multiply the original weight by the mask (0s and 1s)
+                        mask_tensor = masks[name]['weight'].to(module.weight.device)
+                        module.weight.mul_(mask_tensor)
+            
+            return pruned_model
 
         # Quantization (PTQ)
         try:

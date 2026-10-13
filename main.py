@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from torch.utils.data import ConcatDataset, DataLoader
-
+from copy import deepcopy
 from comparison import compare_models, compute_comparison_metrics, unpack_batch
 from conversion import convert_pytorch_to_keras
 from dataset_folder.myDataset import MyDataset
@@ -595,8 +595,8 @@ def main():
             feature_length=current_model_params.get("input_width"),
             sequence_length=(
                 current_model_params.get("input_height")
-                if model_name == "TransformerRULPredictor"
-                else None
+                # if model_name == "TransformerRULPredictor"
+                # else None
             ),
         )
 
@@ -612,7 +612,7 @@ def main():
             print(f"Converted {model_name} to Keras: {keras_model.__class__.__name__}")
         
         compression_pipeline = _parse_compression_pipeline(technique, framework_name)
-        model_compressed = model
+        model_compressed = deepcopy(model)
         for pipeline_technique, pipeline_framework in compression_pipeline:
             framework_class = next(
                 (
@@ -634,6 +634,11 @@ def main():
                 technique=pipeline_technique,
                 dummy_input=dummy_input,
             )
+
+            total_params = sum(p.numel() for p in model_compressed.parameters())
+            zeros = sum((p == 0).sum().item() for p in model_compressed.parameters())
+            print(f"Sparsity real en {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
+            print(type(model_compressed))
 
         # print("Original model:", model_original)
         # print("Compressed model:", model_compressed)
