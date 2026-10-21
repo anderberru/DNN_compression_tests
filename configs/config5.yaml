@@ -1,0 +1,20 @@
+model:
+  - MyMLP
+model_file:
+  - models/best_mlp_soh.pth
+technique:
+  - prune
+framework:
+  - ModelOptimizer
+
+dataset_path: dataset_folder/calce_sliding_window.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP:
+    input_dim: 15
+    hidden_dim: 512
+    output_dim: 1
+    dropout_rate: 0.0
+

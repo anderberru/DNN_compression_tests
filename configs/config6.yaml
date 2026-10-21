@@ -1,0 +1,21 @@
+model:
+  - CNNRULPredictor
+model_file:
+  - models/cnn_soh_predictor.pth
+technique:
+  - prune
+framework:
+  - ModelOptimizer
+
+dataset_path: dataset_folder/calce_sliding_window_cnn.py
+
+dataset_class: MyDataset
+
+model_params:
+  CNNRULPredictor:
+    in_channels: 3
+    channels: 16
+    input_height: 5
+    input_width: 256
+    kernel_size: [1, 5]
+
