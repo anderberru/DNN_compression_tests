@@ -188,6 +188,36 @@ def _resolve_model_path(model_file: str, base_dir: Path | None = None) -> Path:
 
     raise FileNotFoundError(f"Model file not found at {model_file}")
 
+def _get_dataset_for_model(runtime_config: dict[str, Any], model_name: str):
+    dataset_path = runtime_config.get("dataset_path")
+    dataset_files = runtime_config.get("dataset_files")
+    dataset_class = runtime_config.get("dataset_class")
+
+    if isinstance(dataset_path, dict):
+        model_dataset_path = dataset_path.get(model_name)
+    else:
+        model_dataset_path = dataset_path
+
+    if isinstance(dataset_files, dict):
+        if "test" in dataset_files or "train" in dataset_files:
+            model_dataset_files = dataset_files
+        else:
+            model_dataset_files = dataset_files.get(model_name)
+    else:
+        model_dataset_files = dataset_files
+
+    if isinstance(dataset_class, dict):
+        model_dataset_class = dataset_class.get(model_name)
+    else:
+        model_dataset_class = dataset_class
+
+    if model_dataset_files:
+        return _load_dataset_files(model_dataset_files, split="test", dataset_class=model_dataset_class)
+    if model_dataset_path:
+        return _load_dataset_from_path(model_dataset_path, dataset_class=model_dataset_class, split="test")
+
+    raise ValueError(f"No se ha especificado 'dataset_path' o 'dataset_files' para el modelo '{model_name}'")
+
 
 def _resolve_dataset_path(dataset_path: str | Path | None) -> Path:
     if dataset_path is None:
@@ -553,26 +583,24 @@ def main():
         model_name: model_files[0] for model_name in model_names
     }
 
-    dataset_path = runtime_config.get("dataset_path")
-    dataset_files = runtime_config.get("dataset_files")
-    dataset_class = runtime_config.get("dataset_class")
-
-    try:
-        if dataset_files:
-            dataset = _load_dataset_files(dataset_files, split="test", dataset_class=dataset_class)
-        else:
-            dataset = _load_dataset_from_path(dataset_path, dataset_class=dataset_class, split="test")
-    except Exception as exc:
-        print(f"Error loading dataset: {exc}")
-        sys.exit(1)
 
     grid_results = []
+    dataset_cache = {}
     for model_name, (framework_name, technique) in itertools.product(
         model_names, compression_configs
     ):
         model_class = model_list.get(model_name)
         if model_class is None:
             raise ValueError(f"Model '{model_name}' not found")
+
+        if model_name not in dataset_cache:
+            try:
+                dataset_cache[model_name] = _get_dataset_for_model(runtime_config, model_name)
+            except Exception as exc:
+                print(f"Error loading dataset for model '{model_name}': {exc}")
+                sys.exit(1)
+
+        dataset = dataset_cache[model_name]
 
         current_model_params = _get_model_params(model_params, model_name)
         model = model_class(**current_model_params)
@@ -595,8 +623,6 @@ def main():
             feature_length=current_model_params.get("input_width"),
             sequence_length=(
                 current_model_params.get("input_height")
-                # if model_name == "TransformerRULPredictor"
-                # else None
             ),
         )
 
@@ -659,17 +685,19 @@ def main():
                 "technique": "->".join(
                     pipeline_technique for pipeline_technique, _ in compression_pipeline
                 ),
+                "original_energy_consumption_J": comparison_results["original"]["energy_consumption_J"],
+                "compressed_energy_consumption_J": comparison_results["compressed"]["energy_consumption_J"],
                 **{
                     metric_name: compute_comparison_metrics(
                         comparison_results, metric_name=metric_name
                     )
                     for metric_name in (
                         "speedup_factor",
-                        "mse_increase",
-                        "mae_increase",
+                        # "mse_increase",
+                        # "mae_increase",
                         "rmse_increase",
-                        "mape_increase",
-                        "abs_error_increase",
+                        # "mape_increase",
+                        # "abs_error_increase",
                     )
                 },
             }

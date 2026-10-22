@@ -1,6 +1,9 @@
 import time
-
+import pyRAPL
 import torch
+import numpy as np
+
+pyRAPL.setup()
 
 
 def unpack_batch(batch):
@@ -13,7 +16,6 @@ def unpack_batch(batch):
         return batch
     raise ValueError(f"Unsupported batch format: {type(batch).__name__}")
 
-
 def forward_generic(model, batch):
     feature, label = unpack_batch(batch)
     with torch.no_grad():
@@ -22,7 +24,7 @@ def forward_generic(model, batch):
         except TypeError:
             return model(feature)
 
-def compute_comparison_metrics(metric_values, metric_name="abs_error_increase"):
+def compute_comparison_metrics(metric_values, metric_name="rmse_increase"):
 
     value = 0.0
     metric_key_map = {
@@ -70,6 +72,11 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
     sample_count = 0
     inference_time = {"original": 0.0, "compressed": 0.0}
 
+    original_energy_consumption = []
+    compressed_energy_consumption = []
+    meter_orig = pyRAPL.Measurement("original_model")
+    meter_comp = pyRAPL.Measurement("compressed_model")
+
     for batch in dataloader:
         feature, label = unpack_batch(batch)
 
@@ -79,20 +86,27 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
 
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)
+        meter_orig.begin()
         start_time = time.perf_counter()
         # print(f"FORMA DEL DATO EN EVALUACIÓN: {feature.shape}")
         y_orig = forward_generic(original_model, {"feature": feature, "label": label})
+        
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)
         inference_time["original"] += time.perf_counter() - start_time
+        meter_orig.end()
+        original_energy_consumption.append(sum(meter_orig.result.pkg) / 1e6)
 
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)
+        meter_comp.begin()
         start_time = time.perf_counter()
         y_comp = forward_generic(compressed_model, {"feature": feature, "label": label})
         if feature.is_cuda:
             torch.cuda.synchronize(feature.device)
         inference_time["compressed"] += time.perf_counter() - start_time
+        meter_comp.end()
+        compressed_energy_consumption.append(sum(meter_comp.result.pkg) / 1e6)
 
         y_orig = y_orig.reshape_as(label)
         y_comp = y_comp.reshape_as(label)
@@ -118,6 +132,9 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
                 torch.max(torch.abs(error)).item()
             )
 
+    mean_original_energy = np.mean(original_energy_consumption)
+    mean_compressed_energy = np.mean(compressed_energy_consumption)
+    
     comparison_results = {
         model_name: {
             metric_name: sum(values) / len(values)
@@ -129,5 +146,8 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
         comparison_results[model_name]["latency_ms_per_sample"] = (
             inference_time[model_name] * 1000 / sample_count
         )
+
+    comparison_results["original"]["energy_consumption_J"] = mean_original_energy
+    comparison_results["compressed"]["energy_consumption_J"] = mean_compressed_energy
 
     return comparison_results

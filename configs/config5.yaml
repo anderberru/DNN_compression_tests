@@ -1,13 +1,19 @@
 model:
   - MyMLP
+  - CNNRULPredictor
 model_file:
   - models/best_mlp_soh.pth
+  - models/cnn_soh_predictor.pth
 technique:
+  - prune
   - prune
 framework:
   - ModelOptimizer
+  - MicrosoftNNI
 
-dataset_path: dataset_folder/calce_sliding_window.py
+dataset_path:
+  MyMLP: dataset_folder/calce_sliding_window.py
+  CNNRULPredictor: dataset_folder/calce_sliding_window_cnn.py
 
 dataset_class: MyDataset
 
@@ -17,4 +23,10 @@ model_params:
     hidden_dim: 512
     output_dim: 1
     dropout_rate: 0.0
+  CNNRULPredictor:
+    in_channels: 3
+    channels: 16
+    input_height: 5
+    input_width: 256
+    kernel_size: [1, 5]
 
