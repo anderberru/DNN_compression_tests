@@ -56,16 +56,14 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
             "mse": [],
             "mae": [],
             "rmse": [],
-            "mape": [],
-            "max_abs_error": [],
             # "latency_ms_per_sample": 0.0,
         },
         "compressed": {
             "mse": [],
             "mae": [],
             "rmse": [],
-            "mape": [],
-            "max_abs_error": [],
+            # "mape": [],
+            # "max_abs_error": [],
             # "latency_ms_per_sample": 0.0,
         },
     }
@@ -77,60 +75,70 @@ def compare_models(original_model, compressed_model, dataloader, device="cpu"):
     meter_orig = pyRAPL.Measurement("original_model")
     meter_comp = pyRAPL.Measurement("compressed_model")
 
-    for batch in dataloader:
-        feature, label = unpack_batch(batch)
+    total_squared_error = {"original": 0.0, "compressed": 0.0}
+    total_abs_error = {"original": 0.0, "compressed": 0.0}
 
-        feature = feature.to(device)
-        label = label.to(device)
-        sample_count += feature.shape[0]
+    with torch.no_grad():
+        for batch in dataloader:
+            feature, label = unpack_batch(batch)
 
-        if feature.is_cuda:
-            torch.cuda.synchronize(feature.device)
-        meter_orig.begin()
-        start_time = time.perf_counter()
-        # print(f"FORMA DEL DATO EN EVALUACIÓN: {feature.shape}")
-        y_orig = forward_generic(original_model, {"feature": feature, "label": label})
-        
-        if feature.is_cuda:
-            torch.cuda.synchronize(feature.device)
-        inference_time["original"] += time.perf_counter() - start_time
-        meter_orig.end()
-        original_energy_consumption.append(sum(meter_orig.result.pkg) / 1e6)
+            feature = feature.to(device)
+            label = label.to(device)
+            sample_count += feature.shape[0]
 
-        if feature.is_cuda:
-            torch.cuda.synchronize(feature.device)
-        meter_comp.begin()
-        start_time = time.perf_counter()
-        y_comp = forward_generic(compressed_model, {"feature": feature, "label": label})
-        if feature.is_cuda:
-            torch.cuda.synchronize(feature.device)
-        inference_time["compressed"] += time.perf_counter() - start_time
-        meter_comp.end()
-        compressed_energy_consumption.append(sum(meter_comp.result.pkg) / 1e6)
+            if feature.is_cuda:
+                torch.cuda.synchronize(feature.device)
+            meter_orig.begin()
+            start_time = time.perf_counter()
+            # print(f"modelo", {original_model})
+            # print(f"FORMA DEL DATO EN EVALUACIÓN: {feature.shape}")
+            y_orig = forward_generic(original_model, {"feature": feature, "label": label})
+            
+            if feature.is_cuda:
+                torch.cuda.synchronize(feature.device)
+            inference_time["original"] += time.perf_counter() - start_time
+            meter_orig.end()
+            original_energy_consumption.append(sum(meter_orig.result.pkg) / 1e6)
 
-        y_orig = y_orig.reshape_as(label)
-        y_comp = y_comp.reshape_as(label)
+            if feature.is_cuda:
+                torch.cuda.synchronize(feature.device)
+            meter_comp.begin()
+            start_time = time.perf_counter()
+            y_comp = forward_generic(compressed_model, {"feature": feature, "label": label})
+            if feature.is_cuda:
+                torch.cuda.synchronize(feature.device)
+            inference_time["compressed"] += time.perf_counter() - start_time
+            meter_comp.end()
+            compressed_energy_consumption.append(sum(meter_comp.result.pkg) / 1e6)
 
-        for model_name, prediction in (
-            ("original", y_orig),
-            ("compressed", y_comp),
-        ):
-            error = prediction - label
-            mse_value = torch.mean(error.pow(2)).item()
-            mae_value = torch.mean(torch.abs(error)).item()
-            rmse_value = torch.sqrt(torch.tensor(mse_value, device=error.device)).item()
-            safe_denominator = torch.abs(label).clamp_min(torch.finfo(label.dtype).eps)
-            mape_value = (
-                torch.mean(torch.abs(error) / safe_denominator).item() * 100.0
-            )
+            y_orig = y_orig.reshape_as(label)
+            y_comp = y_comp.reshape_as(label)
 
-            metrics[model_name]["mse"].append(mse_value)
-            metrics[model_name]["mae"].append(mae_value)
-            metrics[model_name]["rmse"].append(rmse_value)
-            metrics[model_name]["mape"].append(mape_value)
-            metrics[model_name]["max_abs_error"].append(
-                torch.max(torch.abs(error)).item()
-            )
+            for model_name, prediction in (
+                ("original", y_orig),
+                ("compressed", y_comp),
+            ):
+                error = prediction - label
+                batch_squared_error = torch.sum(error.pow(2)).item()
+                batch_abs_error = torch.sum(torch.abs(error)).item()
+                
+                total_squared_error[model_name] += batch_squared_error
+                total_abs_error[model_name] += batch_abs_error
+
+                
+
+    for model_name in ["original", "compressed"]:
+        final_mse = total_squared_error[model_name] / sample_count
+        final_rmse = final_mse ** 0.5
+        final_mae = total_abs_error[model_name] / sample_count
+
+        metrics[model_name]["mse"].append(final_mse)
+        metrics[model_name]["mae"].append(final_mae)
+        metrics[model_name]["rmse"].append(final_rmse)
+        # metrics[model_name]["mape"].append(mape_value)
+        # metrics[model_name]["max_abs_error"].append(
+        #     torch.max(torch.abs(error)).item()
+        # )
 
     mean_original_energy = np.mean(original_energy_consumption)
     mean_compressed_energy = np.mean(compressed_energy_consumption)

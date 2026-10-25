@@ -2,6 +2,7 @@ import pickle
 from pathlib import Path
 import numpy as np
 import torch
+import joblib
 from sklearn.preprocessing import StandardScaler
 
 
@@ -152,30 +153,56 @@ def load_dataset(split: str = "test", window_size: int = 5, flatten: bool = True
 
     project_root = Path(__file__).resolve().parent.parent
     
-    cells = []
+    test_ids = [
+                'RWTH_015', 'UL-PUR_N15-OV3_18650_NCA_23C_0-100_0.5-0.5C_c',
+                'HNEI_18650_NMC_LCO_25C_0-100_0.5-1.5C_j', 'RWTH_048',
+                'HNEI_18650_NMC_LCO_25C_0-100_0.5-1.5C_n', 'CALCE_CX2_16',
+                'RWTH_010', 'RWTH_005', 'HNEI_18650_NMC_LCO_25C_0-100_0.5-1.5C_l',
+                'RWTH_018', 'RWTH_029', 'RWTH_032', 'CALCE_CX2_35', 'RWTH_043',
+                'RWTH_014', 'HNEI_18650_NMC_LCO_25C_0-100_0.5-1.5C_f', 'RWTH_007',
+                'CALCE_CX2_38', 'RWTH_046', 'RWTH_011',
+                'HNEI_18650_NMC_LCO_25C_0-100_0.5-1.5C_e', 'RWTH_039', 'RWTH_002',
+                'RWTH_049', 'RWTH_020', 'RWTH_036', 'RWTH_013', 'RWTH_026',
+                'RWTH_037', 'RWTH_040', 'RWTH_008', 'CALCE_CS2_38', 'RWTH_028',
+                'RWTH_024'
+        ]
+        
+    train_cells = []
+    test_cells = []
     for rel_path in CALCE_FILES:
         file_path = project_root / rel_path
         if file_path.exists():
+
+            is_test = False
+            for test_id in test_ids:
+                if test_id in str(file_path):
+                    is_test = True
+                    break
+
             with file_path.open("rb") as f:
                 data = pickle.load(f)
                 if isinstance(data, list):
-                    cells.extend(data)
+                    if is_test:
+                        test_cells.extend(data)
+                    else:
+                        train_cells.extend(data)
                 elif isinstance(data, dict):
-                    cells.append(data)
+                    if is_test:
+                        test_cells.append(data)
+                    else:
+                        train_cells.append(data)
                 else:
-                    cells.append(data)
-        else:
-            print(f"Could not find file {file_path}")
+                    if is_test:
+                        test_cells.append(data)
+                    else:
+                        train_cells.append(data)
 
-    n_cells = len(cells)
-    n_train = max(1, int(n_cells * 0.8))
-    
     if split == "train":
-        selected_cells = cells[:n_train]
+        selected_cells = train_cells
     elif split == "test":
-        selected_cells = cells[n_train:]
+        selected_cells = test_cells
     else:
-        selected_cells = cells
+        selected_cells = train_cells + test_cells
 
     X, y, _ = create_sliding_window_dataset_soh(
         selected_cells, 
@@ -183,7 +210,8 @@ def load_dataset(split: str = "test", window_size: int = 5, flatten: bool = True
         flatten=flatten
     )
 
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
+    # scaler = StandardScaler()
+    scaler = joblib.load('dataset_folder/scaler_mlp.joblib')
+    X = scaler.transform(X)
 
     return MyDataset(features=X, labels=y, split="all")

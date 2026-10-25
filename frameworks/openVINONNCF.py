@@ -78,8 +78,19 @@ class OpenVINONNCF(Framework):
                 calibration_dataset = [dummy_input]
                 subset_size = min(subset_size, 1)
 
+            # if not isinstance(calibration_dataset, nncf.Dataset):
+            #     calibration_dataset = nncf.Dataset(calibration_dataset)
             if not isinstance(calibration_dataset, nncf.Dataset):
-                calibration_dataset = nncf.Dataset(calibration_dataset)
+                import inspect
+                
+                num_params = len(inspect.signature(model.forward).parameters)
+                
+                def transform_func(data_item):
+                    if isinstance(data_item, (tuple, list)):
+                        return tuple(data_item[:num_params])
+                    return data_item
+                
+                calibration_dataset = nncf.Dataset(calibration_dataset, transform_func=transform_func)
 
             return nncf.quantize(
                 model,

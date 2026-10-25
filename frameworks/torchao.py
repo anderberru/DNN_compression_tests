@@ -47,6 +47,12 @@ class Torchao(Framework):
             block_size = kwargs.pop("semi_structured_block_size", None)
             dummy_input = kwargs.pop("dummy_input", None)
             calibration_steps = kwargs.pop("calibration_steps", 1)
+
+            import inspect
+            num_params = len(inspect.signature(model.forward).parameters)
+            
+            if isinstance(dummy_input, (tuple, list)):
+                dummy_input = tuple(dummy_input[:num_params])
             
             sparsifier = WandaSparsifier(
                 sparsity_level=sparsity_level,

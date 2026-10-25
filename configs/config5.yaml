@@ -6,7 +6,7 @@ model_file:
   - models/cnn_soh_predictor.pth
 technique:
   - prune
-  - prune
+  - svd
 framework:
   - ModelOptimizer
   - MicrosoftNNI

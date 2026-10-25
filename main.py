@@ -685,17 +685,21 @@ def main():
                 "technique": "->".join(
                     pipeline_technique for pipeline_technique, _ in compression_pipeline
                 ),
+                "original_rmse": comparison_results["original"]["rmse"],
                 "original_energy_consumption_J": comparison_results["original"]["energy_consumption_J"],
+                "original_latency_ms": comparison_results["original"]["latency_ms_per_sample"],
+                "compressed_rmse": comparison_results["compressed"]["rmse"],
                 "compressed_energy_consumption_J": comparison_results["compressed"]["energy_consumption_J"],
+                "compressed_latency_ms": comparison_results["compressed"]["latency_ms_per_sample"],
                 **{
                     metric_name: compute_comparison_metrics(
                         comparison_results, metric_name=metric_name
                     )
                     for metric_name in (
+                        "rmse_increase",
                         "speedup_factor",
                         # "mse_increase",
                         # "mae_increase",
-                        "rmse_increase",
                         # "mape_increase",
                         # "abs_error_increase",
                     )
