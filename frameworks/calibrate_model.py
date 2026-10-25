@@ -5,6 +5,7 @@ from typing import Any
 def calibrate_model(model: Any, dummy_input: Any, calibration_steps: int = 1) -> None:
     """Run calibration forward passes using the configured dummy input."""
     import torch
+    import inspect
 
     if dummy_input is None:
         raise ValueError("dummy_input is required for calibration-based quantization")
@@ -27,9 +28,15 @@ def calibrate_model(model: Any, dummy_input: Any, calibration_steps: int = 1) ->
     except StopIteration:
         device = torch.device("cpu")
 
+    num_params = len(inspect.signature(model.forward).parameters)
+
     was_training = model.training
     model.eval()
     inputs = move_to_device(dummy_input, device)
+
+    if isinstance(inputs, (tuple, list)):
+        inputs = tuple(inputs[:num_params])
+        
     with torch.no_grad():
         for _ in range(calibration_steps):
             if isinstance(inputs, tuple):

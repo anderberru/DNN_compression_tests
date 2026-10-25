@@ -1,0 +1,54 @@
+model:
+  - MyMLP
+  - CNNRULPredictor
+model_file:
+  - models/best_mlp_soh.pth
+  - models/cnn_soh_predictor.pth
+technique:
+  - int8
+  - int8
+  - int8
+  - int8
+  - int8
+  - int4
+  - int4
+  - int4
+  - float8_weight_only
+  - float8
+  - float8
+  - AWQ_int4
+  - SmoothQuant_int8
+framework:
+  - OpenVINONNCF
+  - OptimumQuanto
+  - Torchao
+  - IntelNeuralCompressor
+  - MicrosoftNNI
+  - IntelNeuralCompressor
+  - OptimumQuanto
+  - MicrosoftNNI
+  - Torchao
+  - IntelNeuralCompressor
+  - OptimumQuanto
+  - ModelOptimizer
+  - ModelOptimizer
+
+dataset_path:
+  MyMLP: dataset_folder/calce_sliding_window.py
+  CNNRULPredictor: dataset_folder/calce_sliding_window_cnn.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP:
+    input_dim: 15
+    hidden_dim: 512
+    output_dim: 1
+    dropout_rate: 0.0
+  CNNRULPredictor:
+    in_channels: 3
+    channels: 16
+    input_height: 5
+    input_width: 256
+    kernel_size: [1, 5]
+

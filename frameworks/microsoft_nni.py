@@ -179,6 +179,9 @@ class MicrosoftNNI(Framework):
         except StopIteration:
             device = torch.device("cpu")
 
+        import inspect
+        num_params = len(inspect.signature(model.forward).parameters)
+
         def move_to_device(value: Any) -> Any:
             if isinstance(value, torch.Tensor):
                 return value.to(device)
@@ -208,16 +211,19 @@ class MicrosoftNNI(Framework):
                         if isinstance(sample, dict):
                             calibrated_model(**sample)
                         elif isinstance(sample, (tuple, list)):
-                            calibrated_model(*sample)
+                            calibrated_model(*sample[:num_params])
                         else:
                             calibrated_model(sample)
+                            
                         samples_tracked += 1
                         if samples_tracked >= calibration_steps:
                             break
             finally:
                 calibrated_model.train(was_training)
+                
             if samples_tracked == 0:
                 raise ValueError("calibration_dataset yielded no calibration samples")
+
 
         optimizer = nni.trace(torch.optim.SGD)(quantized_model.parameters(), lr=0.0)
         evaluator = TorchEvaluator(

@@ -19,6 +19,12 @@ class ModelOptimizer(Framework):
         calibration_steps = kwargs.pop("calibration_steps", 1)
         import modelopt.torch.quantization as mtq
 
+        if dummy_input is not None:
+            import inspect
+            num_params = len(inspect.signature(model.forward).parameters)
+            if isinstance(dummy_input, (tuple, list)):
+                dummy_input = tuple(dummy_input[:num_params])
+
         forward_loop = lambda calibrated_model: calibrate_model(
             calibrated_model, dummy_input, calibration_steps
         )

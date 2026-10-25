@@ -27,14 +27,14 @@ class Torchao(Framework):
         if technique == "int8":
             config = Int8DynamicActivationInt8WeightConfig()
             quantize_(model, config)
-        elif technique == "float8":
+        elif technique == "float8": # CUDA only
             config = Float8DynamicActivationFloat8WeightConfig()
             quantize_(model, config)
         elif technique == "float8_weight_only":
             config = Float8WeightOnlyConfig()
             quantize_(model, config)
 
-        elif technique in {"prune", "pruning", "semi_sparse", "2:4_sparsity"}:
+        elif technique in {"prune", "pruning", "semi_sparse", "2:4_sparsity"}: # CUDA only
             # Applies semi-structured sparsity (2:4)
             config = semi_sparse_weight()
             sparsify_(model, config)

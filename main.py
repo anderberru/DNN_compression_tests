@@ -7,6 +7,7 @@ import itertools
 import json
 import pkgutil
 import sys
+import torch
 from pathlib import Path
 from typing import Any
 
@@ -662,7 +663,31 @@ def main():
             )
 
             total_params = sum(p.numel() for p in model_compressed.parameters())
-            zeros = sum((p == 0).sum().item() for p in model_compressed.parameters())
+            # zeros = sum((p == 0).sum().item() for p in model_compressed.parameters())
+            zeros = 0
+            total_params = 0
+
+            for p in model_compressed.parameters():
+                total_params += p.numel()
+                try:
+                    # Intento estándar para tensores normales o podados
+                    zeros += (p == 0).sum().item()
+                except (NotImplementedError, TypeError, RuntimeError):
+                    # Si el tensor está cuantizado (Torchao, Optimum, etc.)
+                    try:
+                        if hasattr(p, 'dequantize'):
+                            # Descuantizar temporalmente si el framework lo permite
+                            zeros += (p.dequantize() == 0).sum().item()
+                        else:
+                            # Forzar conversión a tensor flotante estándar
+                            zeros += (p.to(torch.float32) == 0).sum().item()
+                    except Exception:
+                        # Si el framework ofusca por completo los pesos (ej. compilación C++), 
+                        # asumimos que la capa es densa y no sumamos ceros.
+                        pass
+
+            # Si también estabas calculando el sparsity de esta forma:
+            # sparsity = zeros / total_params if total_params > 0 else 0
             print(f"Sparsity real en {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
             print(type(model_compressed))
 
@@ -686,10 +711,10 @@ def main():
                     pipeline_technique for pipeline_technique, _ in compression_pipeline
                 ),
                 "original_rmse": comparison_results["original"]["rmse"],
-                "original_energy_consumption_J": comparison_results["original"]["energy_consumption_J"],
-                "original_latency_ms": comparison_results["original"]["latency_ms_per_sample"],
                 "compressed_rmse": comparison_results["compressed"]["rmse"],
+                "original_energy_consumption_J": comparison_results["original"]["energy_consumption_J"],
                 "compressed_energy_consumption_J": comparison_results["compressed"]["energy_consumption_J"],
+                "original_latency_ms": comparison_results["original"]["latency_ms_per_sample"],
                 "compressed_latency_ms": comparison_results["compressed"]["latency_ms_per_sample"],
                 **{
                     metric_name: compute_comparison_metrics(

@@ -112,6 +112,12 @@ class OpenVINONNCF(Framework):
             # Arguments for pruning
             ratio = float(config.pop("ratio", config.pop("target_sparsity", 0.5)))
             examples_inputs = config.pop("examples_inputs", config.pop("dummy_input", None))
+            if examples_inputs is not None:
+                import inspect
+                num_params = len(inspect.signature(model.forward).parameters)
+                if isinstance(examples_inputs, (tuple, list)):
+                    examples_inputs = tuple(examples_inputs[:num_params])
+                    
             ignored_scope = config.pop("ignored_scope", None)
             mode_str = config.pop("mode", format_name)
 
