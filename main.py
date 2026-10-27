@@ -15,6 +15,7 @@ from torch.utils.data import ConcatDataset, DataLoader
 from copy import deepcopy
 from comparison import compare_models, compute_comparison_metrics, unpack_batch
 from conversion import convert_pytorch_to_keras
+from vivado_simulation import simulate_vivado
 from dataset_folder.myDataset import MyDataset
 import frameworks
 from frameworks.framework import Framework
@@ -537,6 +538,12 @@ def main():
         default=None,
         help="Optional ONNX path used during PyTorch-to-Keras conversion",
     )
+    parser.add_argument(
+            "--vivado",
+            type=bool,
+            default=False,
+            help="Simulate compressed models with Vivado",
+        )
 
     args = parser.parse_args()
 
@@ -548,6 +555,7 @@ def main():
 
     config = _load_yaml_config(config_path)
     runtime_config = _merge_runtime_config(config, vars(args))
+    run_vivado = runtime_config.get("vivado")
 
     has_dataset_config = runtime_config.get("dataset_path") or runtime_config.get("dataset_files")
     missing = [key for key in ("model", "technique", "framework") if not runtime_config.get(key)]
@@ -585,11 +593,11 @@ def main():
     }
 
 
+    model_cache = []
+    input_shape_cache = []
     grid_results = []
     dataset_cache = {}
-    for model_name, (framework_name, technique) in itertools.product(
-        model_names, compression_configs
-    ):
+    for model_name, (framework_name, technique) in itertools.product(model_names, compression_configs):
         model_class = model_list.get(model_name)
         if model_class is None:
             raise ValueError(f"Model '{model_name}' not found")
@@ -629,6 +637,7 @@ def main():
 
         first_batch = next(iter(test_loader))
         dummy_feature, dummy_label = unpack_batch(first_batch)
+        input_shape_cache.append(tuple(dummy_feature.shape[1:]))
         dummy_input = (dummy_feature[:1], dummy_label[:1])
         if args.convert_to_keras:
             keras_model = convert_pytorch_to_keras(
@@ -670,29 +679,23 @@ def main():
             for p in model_compressed.parameters():
                 total_params += p.numel()
                 try:
-                    # Intento estándar para tensores normales o podados
                     zeros += (p == 0).sum().item()
                 except (NotImplementedError, TypeError, RuntimeError):
-                    # Si el tensor está cuantizado (Torchao, Optimum, etc.)
                     try:
                         if hasattr(p, 'dequantize'):
-                            # Descuantizar temporalmente si el framework lo permite
                             zeros += (p.dequantize() == 0).sum().item()
                         else:
-                            # Forzar conversión a tensor flotante estándar
                             zeros += (p.to(torch.float32) == 0).sum().item()
                     except Exception:
-                        # Si el framework ofusca por completo los pesos (ej. compilación C++), 
-                        # asumimos que la capa es densa y no sumamos ceros.
                         pass
 
-            # Si también estabas calculando el sparsity de esta forma:
             # sparsity = zeros / total_params if total_params > 0 else 0
-            print(f"Sparsity real en {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
+            print(f"Real sparsity in {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
             print(type(model_compressed))
 
         # print("Original model:", model_original)
         # print("Compressed model:", model_compressed)
+        model_cache.append(model_compressed)
 
         comparison_results = compare_models(
             model_original,
@@ -737,6 +740,9 @@ def main():
     csv_output = runtime_config.get("csv_output") or default_csv_output
     csv_path = _export_results_csv(grid_results, csv_output)
     print(f"Grid search results exported to {csv_path}")
+
+    # if run_vivado == True:
+    #     simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
 
 
 if __name__ == "__main__":
