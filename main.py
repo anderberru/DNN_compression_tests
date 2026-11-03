@@ -528,6 +528,12 @@ def main():
         help="Path for the grid search CSV output (default: results/<config>_results.csv)"
     )
     parser.add_argument(
+        "--csv-vivado-output",
+        type=str,
+        default=None,
+        help="Path for the grid search of vivado CSV output (default: results/<config>_vivado_results.csv)"
+    )
+    parser.add_argument(
         "--convert-to-keras",
         action="store_true",
         help="Convert each loaded PyTorch model to Keras through ONNX",
@@ -741,8 +747,14 @@ def main():
     csv_path = _export_results_csv(grid_results, csv_output)
     print(f"Grid search results exported to {csv_path}")
 
-    # if run_vivado == True:
-    #     simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
+    if run_vivado == True:
+        print("Starting Vivado experiments...")
+        vivado_results = simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
+        _print_results_table(vivado_results)
+        default_csv_output = Path("results") / f"{config_path.stem}_vivado_results.csv"
+        csv_output = runtime_config.get("csv_vivado_output") or default_csv_output
+        csv_path = _export_results_csv(grid_results, csv_output)
+        print(f"Vivado results exported to {csv_path}")
 
 
 if __name__ == "__main__":

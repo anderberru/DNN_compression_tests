@@ -1,0 +1,41 @@
+model:
+  - MyMLP
+  - CNNRULPredictor
+  - CNNRULPredictor_1D_HLS
+model_file:
+  - models/best_mlp_soh.pth
+  - models/cnn_soh_predictor.pth
+  - models/cnn_soh_predictor2.pth
+technique:
+  - svd
+
+framework:
+  - LowRankFactorization
+
+dataset_path:
+  MyMLP: dataset_folder/calce_sliding_window.py
+  CNNRULPredictor: dataset_folder/calce_sliding_window_cnn.py
+  CNNRULPredictor_1D_HLS: dataset_folder/calce_sliding_window_cnn.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP:
+    input_dim: 15
+    hidden_dim: 512
+    output_dim: 1
+    dropout_rate: 0.0
+  CNNRULPredictor:
+    in_channels: 3
+    channels: 16
+    input_height: 5
+    input_width: 256
+    kernel_size: [1, 5]
+  CNNRULPredictor_1D_HLS:
+    in_channels: 3
+    channels: 16
+    input_height: 5
+    input_width: 256
+    kernel_size: 5
+
+vivado: False
