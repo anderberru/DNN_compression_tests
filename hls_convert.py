@@ -1,7 +1,9 @@
 import os
 import hls4ml
 import glob
+import re
 import xml.etree.ElementTree as ET
+import subprocess
 
 def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'):
     print(f" [HLS] Converting model: {full_name} with precision {precision}")
@@ -111,3 +113,98 @@ def extract_latency(project_path):
             pass
 
     return None, 0.0
+
+
+def run_vivado_power_analysis(output_dir):
+    """
+    Sintetiza en memoria los ficheros Verilog exportados por Vitis HLS 
+    y genera el informe de potencia sin requerir un proyecto .xpr previo.
+    """
+    # 1. Localizar la carpeta de código Verilog exportado por Vitis HLS
+    verilog_dir = os.path.join(output_dir, 'myproject_prj/solution1/impl/ip/hdl/verilog')
+    if not os.path.exists(verilog_dir):
+        verilog_dir = os.path.join(output_dir, 'myproject_prj/solution1/impl/verilog')
+
+    if not os.path.exists(verilog_dir):
+        print(f" [Warning] No se encontraron archivos Verilog en: {verilog_dir}")
+        return
+
+    tcl_script_path = os.path.join(output_dir, 'run_power_analysis.tcl')
+    power_rpt_path = os.path.join(output_dir, 'power_report.rpt')
+    power_xml_path = os.path.join(output_dir, 'power_report.xml')
+
+    # 2. Script TCL de síntesis directa en memoria (In-Memory)
+    tcl_content = f"""
+    create_project -in_memory -part xc7z020clg400-1
+    read_verilog [glob {verilog_dir}/*.v]
+    synth_design -top myproject -part xc7z020clg400-1
+    create_clock -period 5.000 -name ap_clk [get_ports ap_clk]
+    report_power -file {power_rpt_path}
+    report_power -file {power_xml_path} -format xml
+    exit
+    """
+    
+    with open(tcl_script_path, 'w') as f:
+        f.write(tcl_content)
+
+    print(" [Vivado] Ejecutando análisis de potencia RTL en memoria...")
+    
+    # 3. Ejecutar Vivado guardando el log para diagnóstico en caso de error
+    log_path = os.path.join(output_dir, 'vivado_power.log')
+    with open(log_path, 'w') as log_file:
+        res = subprocess.run(
+            f"vivado -mode batch -source {tcl_script_path}", 
+            shell=True, 
+            stdout=log_file, 
+            stderr=log_file
+        )
+    
+    if res.returncode != 0:
+        print(f" [Warning] Vivado terminó con código de salida {res.returncode}. Revisa {log_path}")
+
+
+def extract_energy_joules(project_path, latency_us):
+    """
+    Extrae la potencia dinámica (W) del informe de Vivado y calcula los Julios (J) por inferencia.
+    """
+    if latency_us is None or latency_us <= 0:
+        return 0.0, 0.0
+
+    p_dynamic_w = 0.0
+
+    # 1. Estrategia A: Leer directamente del informe de texto power_report.rpt
+    rpt_files = glob.glob(os.path.join(project_path, '**', 'power_report.rpt'), recursive=True)
+    if rpt_files:
+        try:
+            with open(rpt_files[0], 'r') as f:
+                content = f.read()
+            # Buscar la fila: | Dynamic (W) | 0.145 |
+            match = re.search(r'\|\s*Dynamic\s*\(W\)\s*\|\s*([\d\.\e\+\-]+)\s*\|', content, re.IGNORECASE)
+            if match:
+                p_dynamic_w = float(match.group(1))
+        except Exception:
+            pass
+
+    # 2. Estrategia B: Leer del esquema XML power_report.xml
+    if p_dynamic_w == 0.0:
+        xml_files = glob.glob(os.path.join(project_path, '**', 'power_report.xml'), recursive=True)
+        if xml_files:
+            try:
+                tree = ET.parse(xml_files[0])
+                root = tree.getroot()
+                for cell in root.findall('.//cell'):
+                    if cell.attrib.get('Header') == 'Power (W)':
+                        parent = cell.find('..')
+                        if parent is not None and 'Dynamic' in parent.attrib.get('Header', ''):
+                            p_dynamic_w = float(cell.text)
+                            break
+            except Exception:
+                pass
+
+    # T_inferencia en segundos (us -> s)
+    t_seconds = latency_us * 1e-6
+    
+    # E (Julios) = P (Vatios) * T (segundos)
+    energy_joules = p_dynamic_w * t_seconds
+
+    return p_dynamic_w, energy_joules

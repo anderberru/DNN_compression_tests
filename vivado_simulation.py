@@ -1,13 +1,10 @@
 import numpy as np
 import pandas as pd
-from hls_convert import hls_convert, extract_latency
+from hls_convert import hls_convert, extract_latency, run_vivado_power_analysis, extract_energy_joules
 # import tensorflow as tf
 # from tensorflow.keras import layers, models
-import torch
-from hls_convert import hls_convert, extract_latency
 import os
 import shutil
-
 
 def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache):
     grid_vivado = []
@@ -61,6 +58,10 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
         # print(f"Latency: {latency_ms:.4f} ms")
         rmse_increase = rmse_test - rmse_original
         speedup_factor = latency_original / latency_ms
+
+        run_vivado_power_analysis(output_dir=hls_project_dir)
+        p_dynamic_w, energy_joules = extract_energy_joules(project_path=hls_project_dir, latency_us=latency_us)
+        print(f"Dynamic Power: {p_dynamic_w:.4f} W, Energy: {energy_joules:.6f} J")
 
         grid_vivado.append(
             {
