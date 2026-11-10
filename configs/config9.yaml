@@ -1,0 +1,22 @@
+model:
+  - CNNRULPredictor_HLS
+model_file:
+  - models/cnn_soh_predictor3channel64.pth
+technique:
+  - no
+framework:
+  - Uncompressed
+dataset_path:
+  CNNRULPredictor_HLS: dataset_folder/calce_sliding_window_cnn.py
+
+dataset_class: MyDataset
+
+model_params:
+  CNNRULPredictor_HLS:
+    in_channels: 3
+    channels: 3
+    input_height: 5
+    input_width: 64
+    kernel_size: [1, 5]
+
+vivado: True

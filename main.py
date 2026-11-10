@@ -753,7 +753,7 @@ def main():
         _print_results_table(vivado_results)
         default_csv_output = Path("results") / f"{config_path.stem}_vivado_results.csv"
         csv_output = runtime_config.get("csv_vivado_output") or default_csv_output
-        csv_path = _export_results_csv(grid_results, csv_output)
+        csv_path = _export_results_csv(vivado_results, csv_output)
         print(f"Vivado results exported to {csv_path}")
 
 

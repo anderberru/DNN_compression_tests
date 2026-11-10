@@ -118,7 +118,7 @@ CALCE_FILES = [
 def load_dataset(
     split: str = "test", 
     window_size: int = 5, 
-    fixed_length: int = 256
+    fixed_length: int = 64
 ):
     from dataset_folder.myDataset import MyDataset
 
@@ -195,7 +195,7 @@ def load_dataset(
     
         X_flat = X.reshape(N, -1)
         
-        scaler = joblib.load('dataset_folder/scaler_cnn.joblib')
+        scaler = joblib.load('dataset_folder/scaler64.joblib')
         X_scaled = scaler.transform(X_flat)
         
         X = X_scaled.reshape(N, C, H, W)

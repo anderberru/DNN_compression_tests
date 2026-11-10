@@ -1,0 +1,21 @@
+model:
+  - MyMLP_HLS
+model_file:
+  - models/best_mlp128_soh.pth
+technique:
+  - no
+framework:
+  - Uncompressed
+dataset_path:
+  MyMLP_HLS: dataset_folder/calce_sliding_window.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP_HLS:
+    input_dim: 15
+    hidden_dim: 128
+    output_dim: 1
+    dropout_rate: 0.0
+
+vivado: True

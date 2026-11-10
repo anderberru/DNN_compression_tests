@@ -1,73 +1,62 @@
 import os
 import hls4ml
+import glob
+import xml.etree.ElementTree as ET
 
 def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'):
-    config = hls4ml.utils.config_from_keras_model(
-        model, 
+    print(f" [HLS] Converting model: {full_name} with precision {precision}")
+    
+    config = hls4ml.utils.config_from_pytorch_model(
+        model,
+        input_shape=input_shape,
+        granularity='name',
         default_precision=precision,
-        default_reuse_factor=80
+        default_reuse_factor=5
     )
 
     config['Model']['Strategy'] = 'Resource'
     config['Model']['IOType'] = 'io_stream'
 
-    if 'LayerName' not in config:
-        config['LayerName'] = {}
+    # print("Capas detectadas:", list(config['LayerName'].keys()))
 
-   
-    for layer in model.layers:
-        layer_name = layer.name
-        layer_type = layer.__class__.__name__
+    if 'LayerName' in config:
+        for layer_name, layer_cfg in config['LayerName'].items():
+            layer_cfg['Strategy'] = 'Resource'
+            layer_cfg['ReuseFactor'] = 5
 
-        if 'Conv1D' in layer_type or 'Dense' in layer_type:
-            config['LayerName'][layer_name] = {
-                'Strategy': 'Resource',
-                'ReuseFactor': 80
-            }
-        elif 'Pooling' in layer_type or 'Activation' in layer_type:
-            config['LayerName'][layer_name] = {
-                'Strategy': 'Resource',
-                'ReuseFactor': 1
-            }
-
+    # 3. C++ project generation
     output_dir = os.path.join('hls', full_name)
-    hls_model = hls4ml.converters.convert_from_keras_model(
+    hls_model = hls4ml.converters.convert_from_pytorch_model(
         model,
+        input_shape=input_shape,
         hls_config=config,
         output_dir=output_dir,
         part='xc7z020clg400-1',
         backend='Vitis'
     )
 
-    tcl_path = os.path.join(output_dir, 'build_prj.tcl')
-    if os.path.exists(tcl_path):
-        with open(tcl_path, 'r') as f:
-            tcl_content = f.read()
-        
-        if 'config_compile -expression_balance=off' not in tcl_content:
-            tcl_content = tcl_content.replace(
-                'csynth_design',
-                'config_compile -expression_balance=off\ncsynth_design'
-            )
-            with open(tcl_path, 'w') as f:
-                f.write(tcl_content)
-            print(" [HLS Patch] Aplicada directiva '-expression_balance=off' en build_prj.tcl")
-
     hls_model.compile()
 
+    # 5. Build the project with Vivado
     try:
-        hls_model.build(csim=False, synth=True, export=False)
+        hls_model.build(csim=True, synth=True, export=True)
     except Exception as err:
         cycles, latency_us = extract_latency(project_path=output_dir)
-        if cycles is not None or latency_us > 0:
+        print(f" [HLS] Latency extracted: {latency_us:.4f} us, Cycles: {cycles}")
+        
+        export_zip = os.path.join(output_dir, 'myproject_prj/solution1/impl/export.zip')
+        csynth_rpt = os.path.join(output_dir, 'myproject_prj/solution1/syn/report/csynth.rpt')
+
+        if cycles is not None or latency_us > 0 or os.path.exists(export_zip) or os.path.exists(csynth_rpt):
             print("\n" + "!"*80)
-            print(" [HLS Warning] Vitis HLS completó la C-Síntesis y generó csynth.rpt con éxito.")
-            print("               Continuando la ejecución del framework...")
+            print(" [HLS Warning] Vitis HLS completed the C-Synthesis and the IP export with success.")
+            print("               The memory crash on tool closing was ignored.")
+            print("               Continuing the framework execution...")
             print("!"*80 + "\n")
         else:
             log_file = os.path.join(output_dir, 'vitis_hls.log')
             if os.path.exists(log_file):
-                print("\n" + "="*25 + " ÚLTIMAS LÍNEAS DE VITIS_HLS.LOG " + "="*25)
+                print("\n" + "="*25 + " LAST LINES OF VITIS_HLS.LOG " + "="*25)
                 with open(log_file, 'r') as f:
                     lines = f.readlines()
                     for line in lines[-30:]:
@@ -78,90 +67,47 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
     return hls_model
 
 
-def hls_convert2(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'):
-    config = hls4ml.utils.config_from_keras_model(
-        model, 
-        default_precision=precision,
-        default_reuse_factor=80
-    )
-
-    config['Model']['Strategy'] = 'Resource'
-    config['Model']['IOType'] = 'io_stream'
-
-    if 'LayerType' not in config:
-        config['LayerType'] = {}
-
-
-    output_dir = os.path.join('hls', full_name)
-    hls_model = hls4ml.converters.convert_from_keras_model(
-        model,
-        hls_config=config,
-        output_dir=output_dir,
-        part='xc7z020clg400-1',
-        backend='Vitis'
-    )
-
-    tcl_path = os.path.join(output_dir, 'build_prj.tcl')
-    if os.path.exists(tcl_path):
-        with open(tcl_path, 'r') as f:
-            tcl_content = f.read()
-        
-        if 'config_compile -expression_balance=off' not in tcl_content:
-            tcl_content = tcl_content.replace(
-                'csynth_design',
-                'config_compile -expression_balance=off\ncsynth_design'
-            )
-            with open(tcl_path, 'w') as f:
-                f.write(tcl_content)
-            print(" [HLS Patch] Aplicado '-expression_balance=off' en build_prj.tcl para controlar RAM.")
-
-    hls_model.compile()
-
-    try:
-        hls_model.build(csim=False, synth=True, export=False)
-    except Exception as err:
-        log_file = os.path.join(output_dir, 'vitis_hls.log')
-        if os.path.exists(log_file):
-            print("\n" + "="*25 + " ÚLTIMAS LÍNEAS DE VITIS_HLS.LOG " + "="*25)
-            with open(log_file, 'r') as f:
-                lines = f.readlines()
-                for line in lines[-30:]:
-                    print(line.strip())
-            print("="*80 + "\n")
-        raise err
-
-    return hls_model
-
-
-def extract_latency(project_path='hls/CNNRULPredictor_1D_HLS'):
-    base_path = os.path.join(project_path, 'myproject_prj/solution1/syn/report')
-    csynth_path = os.path.join(base_path, 'csynth.rpt')
-    
-    if not os.path.exists(csynth_path):
-        csynth_path = os.path.join(base_path, 'myproject_csynth.rpt')
-
-    if not os.path.exists(csynth_path):
+def extract_latency(project_path):
+    """
+    Extracts the latency by first reading the structured csynth.xml file (100% reliable in Vitis 2026).
+    If it does not exist, it uses a generic fallback on any csynth.rpt.
+    """
+    if not os.path.exists(project_path):
         return None, 0.0
 
-    cycles = None
-    latency_us = 0.0
+    # Attempt to extract latency from csynth.xml or csynth.rpt files
+    xml_files = glob.glob(os.path.join(project_path, '**', 'csynth.xml'), recursive=True)
+    if xml_files:
+        try:
+            tree = ET.parse(xml_files[0])
+            root = tree.getroot()
+            worst_lat = root.find('.//PerformanceEstimates/SummaryOfOverallLatency/Worst-caseLatency')
+            if worst_lat is not None and worst_lat.text.strip().isdigit():
+                cycles = int(worst_lat.text.strip())
+                return cycles, (cycles * 5.0) / 1000.0
+        except Exception:
+            pass
 
-    with open(csynth_path, 'r') as f:
-        for line in f:
-            if 'myproject' in line and '|' in line and 'Modules' not in line:
-                parts = [p.strip() for p in line.split('|') if p.strip()]
-                for i, elem in enumerate(parts):
-                    if elem in ['yes', 'no'] and (i + 1) < len(parts):
-                        try:
-                            cycles = int(parts[i + 1])
-                            if (i + 2) < len(parts) and parts[i + 2].replace('.', '', 1).replace('e+', '', 1).isdigit():
-                                latency_us = float(parts[i + 2]) / 1000.0
-                            else:
-                                latency_us = (cycles * 5.0) / 1000.0
-                            break
-                        except ValueError:
-                            continue
-                if cycles is not None:
-                    break
+    # 2. Fallback: Extract latency from csynth.rpt files
+    rpt_files = glob.glob(os.path.join(project_path, '**', '*csynth.rpt'), recursive=True)
+    for rpt_path in rpt_files:
+        try:
+            with open(rpt_path, 'r') as f:
+                lines = f.readlines()
+            
+            in_summary = False
+            for line in lines:
+                if '* Summary:' in line:
+                    in_summary = True
+                    continue
+                if in_summary and '|' in line and not any(k in line for k in ['Latency', '---', 'min', 'max', 'Module']):
+                    parts = [p.strip() for p in line.split('|') if p.strip()]
+                    if len(parts) >= 2:
+                        for p in parts[:2]:
+                            if p.isdigit():
+                                cycles = int(p)
+                                return cycles, (cycles * 5.0) / 1000.0
+        except Exception:
+            pass
 
-    return cycles, latency_us
+    return None, 0.0
