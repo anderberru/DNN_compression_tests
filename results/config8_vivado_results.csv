@@ -1,2 +1,2 @@
-model,framework,technique,quant_precision,original_rmse,compressed_rmse,rmse_increase,original_latency_ms,compressed_latency_ms,speedup_factor
-MyMLP_HLS,Uncompressed,False,"fixed<16,6>",0.07076668649749554,0.12819819,0.0574315050260564,0.005183152883056699,0.000805,6.438699233610806
+model,framework,technique,quant_precision,original_rmse,compressed_rmse,rmse_increase,original_latency_ms,compressed_latency_ms,speedup_factor,original_energy_joules,compressed_energy_joules,compressed_power_w
+MyMLP_HLS,Uncompressed,False,"fixed<16,6>",0.07076668649749554,0.12819819,0.0574315050260564,0.004711836539592276,0.000805,5.853213092661212,0.00017588653846153848,1.115408e-05,13.856

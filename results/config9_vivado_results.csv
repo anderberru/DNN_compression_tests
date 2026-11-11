@@ -1,2 +1,2 @@
-model,framework,technique,quant_precision,original_rmse,compressed_rmse,rmse_increase,original_latency_ms,compressed_latency_ms,speedup_factor
-CNNRULPredictor_HLS,Uncompressed,False,"fixed<16,6>",0.025645972176915575,0.03689487,0.011248896882408689,0.014163281591978138,0.04378,0.3235103150291946
+model,framework,technique,quant_precision,original_rmse,compressed_rmse,rmse_increase,original_latency_ms,compressed_latency_ms,speedup_factor,original_energy_joules,compressed_energy_joules,compressed_power_w
+CNNRULPredictor_HLS,Uncompressed,False,"fixed<16,6>",0.025645972176915575,0.03689487,0.011248896882408689,0.013121740719532714,0.04378,0.299719979888824,0.00026092787074437395,0.00021338371999999998,4.874

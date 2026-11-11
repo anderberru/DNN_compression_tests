@@ -14,6 +14,7 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
         technique = grid_results[i]["technique"]
         rmse_original = grid_results[i]["original_rmse"]
         latency_original = grid_results[i]["original_latency_ms"]
+        energy_original = grid_results[i]["original_energy_consumption_J"]
         
         full_name = f"{model_name}-{framework}-{technique}"
         hls_project_dir = 'hls/' + full_name
@@ -75,6 +76,9 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
                 "original_latency_ms": latency_original,
                 "compressed_latency_ms": latency_ms,
                 "speedup_factor": speedup_factor,
+                "original_energy_joules": energy_original,
+                "compressed_energy_joules": energy_joules,
+                "compressed_power_w": p_dynamic_w
             }
         )
 
