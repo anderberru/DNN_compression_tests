@@ -4,9 +4,14 @@ import glob
 import re
 import xml.etree.ElementTree as ET
 import subprocess
+import torch
+import torch.nn.utils.parametrize as parametrize
+import copy
 
 def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'):
     print(f" [HLS] Converting model: {full_name} with precision {precision}")
+
+    model = _prepare_pytorch_model_for_hls(model)
     
     config = hls4ml.utils.config_from_pytorch_model(
         model,
@@ -36,6 +41,9 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
         part='xc7z020clg400-1',
         backend='Vitis'
     )
+
+    if hasattr(hls_model, 'config') and isinstance(hls_model.config.config, dict):
+        hls_model.config.config.pop('PytorchModel', None)
 
     hls_model.compile()
 
@@ -68,6 +76,50 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
 
     return hls_model
 
+def _prepare_pytorch_model_for_hls(model):
+    """
+    Convierte tensores especiales o parametrizaciones (como las de TorchAO)
+    en parámetros densos estándar de PyTorch para que hls4ml y PyYAML los procesen sin errores.
+    """
+    try:
+        clean_model = copy.deepcopy(model).cpu().eval()
+    except Exception:
+        clean_model = model.cpu().eval()
+
+    for module in clean_model.modules():
+        # 1. Consolidar máscaras/parametrizaciones si el framework de pruning las dejó activas
+        if parametrize.is_parametrized(module):
+            for param_name in list(module.parametrizations.keys()):
+                parametrize.remove_parametrizations(module, param_name, leave_parametrized=True)
+
+        # 2. Convertir subclases de Tensor (TorchAO, SparseSemiStructuredTensor, etc.) a Parameter denso
+        for attr_name, param in list(module._parameters.items()):
+            if param is None:
+                continue
+            if type(param) is not torch.nn.Parameter or type(param.data) is not torch.Tensor:
+                raw_data = param.data
+                if hasattr(raw_data, 'to_dense'):
+                    dense_data = raw_data.to_dense()
+                elif hasattr(raw_data, 'dequantize'):
+                    dense_data = raw_data.dequantize()
+                else:
+                    dense_data = raw_data.to(torch.float32)
+
+                module._parameters[attr_name] = torch.nn.Parameter(
+                    dense_data.detach().cpu().to(torch.float32),
+                    requires_grad=False
+                )
+
+        # 3. Limpiar buffers si alguno es una subclase de Tensor
+        for buf_name, buf in list(module._buffers.items()):
+            if buf is not None and type(buf) is not torch.Tensor:
+                if hasattr(buf, 'to_dense'):
+                    buf = buf.to_dense()
+                elif hasattr(buf, 'dequantize'):
+                    buf = buf.dequantize()
+                module._buffers[buf_name] = buf.detach().cpu().to(torch.float32)
+
+    return clean_model
 
 def extract_latency(project_path):
     """

@@ -655,6 +655,7 @@ def main():
         
         compression_pipeline = _parse_compression_pipeline(technique, framework_name)
         model_compressed = deepcopy(model)
+        sparsity_pct = 0.0
         for pipeline_technique, pipeline_framework in compression_pipeline:
             framework_class = next(
                 (
@@ -695,8 +696,10 @@ def main():
                     except Exception:
                         pass
 
+            sparsity_pct = (zeros / total_params) * 100 if total_params > 0 else 0.0
+            print(f"Real sparsity in {framework_instance.__class__.__name__}: {sparsity_pct:.2f}%")
             # sparsity = zeros / total_params if total_params > 0 else 0
-            print(f"Real sparsity in {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
+            # print(f"Real sparsity in {framework_instance.__class__.__name__}: {(zeros/total_params)*100:.2f}%")
             print(type(model_compressed))
 
         # print("Original model:", model_original)
@@ -719,6 +722,7 @@ def main():
                 "technique": "->".join(
                     pipeline_technique for pipeline_technique, _ in compression_pipeline
                 ),
+                "sparsity_pct": round(sparsity_pct, 2),
                 "original_rmse": comparison_results["original"]["rmse"],
                 "compressed_rmse": comparison_results["compressed"]["rmse"],
                 "original_energy_consumption_J": comparison_results["original"]["energy_consumption_J"],

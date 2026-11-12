@@ -1,41 +1,41 @@
 model:
-  - MyMLP
-  - CNNRULPredictor
+  - MyMLP_HLS
+  - CNNRULPredictor_HLS
 model_file:
-  - models/best_mlp_soh.pth
-  - models/cnn_soh_predictor.pth
+  - models/best_mlp128_soh.pth
+  - models/cnn_soh_predictor3channel64.pth
 technique:
+  - wanda
   - l1
   - l2
   - fpgm
-  - wanda
   - magnitude
   - prune
 framework:
-  - MicrosoftNNI
-  - MicrosoftNNI
-  - MicrosoftNNI
   - Torchao
+  - MicrosoftNNI
+  - MicrosoftNNI
+  - MicrosoftNNI
   - OpenVINONNCF
   - ModelOptimizer
 
 dataset_path:
-  MyMLP: dataset_folder/calce_sliding_window.py
-  CNNRULPredictor: dataset_folder/calce_sliding_window_cnn.py
+  MyMLP_HLS: dataset_folder/calce_sliding_window.py
+  CNNRULPredictor_HLS: dataset_folder/calce_sliding_window_cnn.py
 
 dataset_class: MyDataset
 
 model_params:
-  MyMLP:
+  MyMLP_HLS:
     input_dim: 15
-    hidden_dim: 512
+    hidden_dim: 128
     output_dim: 1
     dropout_rate: 0.0
-  CNNRULPredictor:
+  CNNRULPredictor_HLS:
     in_channels: 3
-    channels: 16
+    channels: 3
     input_height: 5
-    input_width: 256
+    input_width: 64
     kernel_size: [1, 5]
 
-vivado: False
+vivado: True
