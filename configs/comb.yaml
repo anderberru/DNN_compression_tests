@@ -1,0 +1,43 @@
+model:
+  - MyMLP_HLS
+  - CNNRULPredictor_HLS
+model_file:
+  - models/best_mlp128_soh.pth
+  - models/cnn_soh_predictor3channel64.pth
+technique:
+  - wanda,int8
+  - wanda,float8_weight_only
+  - wanda,int8
+  - wanda,int4
+  - wanda,float8
+  - svd,int8
+  - svd,float8_weight_only
+framework:
+  - Torchao,Torchao
+  - Torchao,Torchao
+  - Torchao,IntelNeuralCompressor
+  - Torchao,IntelNeuralCompressor
+  - Torchao,IntelNeuralCompressor
+  - LowRankFactorization,Torchao
+  - LowRankFactorization,Torchao
+
+dataset_path:
+  MyMLP_HLS: dataset_folder/calce_sliding_window.py
+  CNNRULPredictor_HLS: dataset_folder/calce_sliding_window_cnn.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP_HLS:
+    input_dim: 15
+    hidden_dim: 128
+    output_dim: 1
+    dropout_rate: 0.0
+  CNNRULPredictor_HLS:
+    in_channels: 3
+    channels: 3
+    input_height: 5
+    input_width: 64
+    kernel_size: [1, 5]
+
+vivado: True

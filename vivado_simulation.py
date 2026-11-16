@@ -6,7 +6,7 @@ from hls_convert import hls_convert, extract_latency, run_vivado_power_analysis,
 import os
 import shutil
 
-def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache):
+def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache, original_model_cache=None):
     grid_vivado = []
     for i in range(len(grid_results)):
         model_name = grid_results[i]["model"]
@@ -20,12 +20,15 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
         hls_project_dir = 'hls/' + full_name
         quant_precision = 'fixed<16,6>'
 
+        technique = grid_results[i]["technique"]
+
         pt_model = model_cache[i]
+        ref_model = original_model_cache.get(model_name) if original_model_cache else None
         dataset = dataset_cache[model_name]
         input_shape = input_shape_cache[i]
 
         # convert the model to HLS and compile it to simulate it with Vivado
-        hls_model = hls_convert(model=pt_model, full_name=full_name, input_shape=input_shape, precision=quant_precision)
+        hls_model, final_precision = hls_convert(model=pt_model, full_name=full_name, input_shape=input_shape, precision=quant_precision, technique=technique, reference_model=ref_model)
 
         x_test = dataset.features
         y_test = dataset.labels
@@ -69,7 +72,7 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
                 "model": model_name,
                 "framework": framework,
                 "technique": technique,
-                "quant_precision": quant_precision,
+                "quant_precision": final_precision,
                 "original_rmse": rmse_original,
                 "compressed_rmse": rmse_test,
                 "rmse_increase": rmse_increase,

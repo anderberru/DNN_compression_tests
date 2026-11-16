@@ -8,10 +8,10 @@ import torch
 import torch.nn.utils.parametrize as parametrize
 import copy
 
-def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'):
-    print(f" [HLS] Converting model: {full_name} with precision {precision}")
+def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>', technique="", reference_model=None):
+    print(f" [HLS] Converting model: {full_name}")
 
-    model = _prepare_pytorch_model_for_hls(model)
+    model = _prepare_pytorch_model_for_hls(model, reference_model=reference_model)
     
     config = hls4ml.utils.config_from_pytorch_model(
         model,
@@ -24,12 +24,39 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
     config['Model']['Strategy'] = 'Resource'
     config['Model']['IOType'] = 'io_stream'
 
-    # print("Capas detectadas:", list(config['LayerName'].keys()))
+    tech_lower = technique.lower()
+    
+    if "int4" in tech_lower:
+        weight_prec = 'fixed<4,1>'
+    elif "int8" in tech_lower:
+        weight_prec = 'fixed<8,2>'  # Range: -2.0 to 1.98
+    elif "float8" in tech_lower:
+        weight_prec = 'fixed<8,3>'  # Range: -4.0 to 3.96
+    else:
+        weight_prec = precision 
+
+    print(f" [HLS] Auto-detected weight precision from technique '{technique}': {weight_prec}")
+
+    if "weight_only" in tech_lower:
+        bias_prec = precision
+    else:
+        bias_prec = weight_prec
+
+    final_prec = weight_prec + bias_prec
 
     if 'LayerName' in config:
         for layer_name, layer_cfg in config['LayerName'].items():
             layer_cfg['Strategy'] = 'Resource'
             layer_cfg['ReuseFactor'] = 5
+            
+            # Dynamic assignment to weights and bias based on the detected precision
+            layer_cfg['weight_precision'] = weight_prec 
+            layer_cfg['bias_precision']   = bias_prec
+            
+            # Accumulators and results are set to fixed<16,6> to prevent overflow in intermediate computations
+            layer_cfg['accum_precision']  = 'fixed<16,6>'
+            layer_cfg['result_precision'] = 'fixed<16,6>'
+
 
     # 3. C++ project generation
     output_dir = os.path.join('hls', full_name)
@@ -39,7 +66,8 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
         hls_config=config,
         output_dir=output_dir,
         part='xc7z020clg400-1',
-        backend='Vitis'
+        backend='Vitis',
+        clock_period=10
     )
 
     if hasattr(hls_model, 'config') and isinstance(hls_model.config.config, dict):
@@ -74,50 +102,124 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
                 print("="*80 + "\n")
             raise err
 
-    return hls_model
+    return hls_model, final_prec
 
-def _prepare_pytorch_model_for_hls(model):
+def _extract_clean_tensor(val, module=None, is_weight=False):
+    """Extrae un tensor denso float32 desde cualquier formato cuantizado o subclase."""
+    if val is None:
+        return None
+    if callable(val):
+        val = val()
+    if val is None:
+        return None
+
+    # Si el módulo usa fake-quantization dinámica (NNCF / QAT / Quanto / ModelOpt)
+    if is_weight and module is not None:
+        for fq_attr in ('weight_fake_quant', 'weight_quantizer'):
+            fq = getattr(module, fq_attr, None)
+            if callable(fq):
+                try:
+                    val = fq(val)
+                except Exception:
+                    pass
+
+    raw = getattr(val, 'data', val)
+    if hasattr(raw, 'dequantize'):
+        raw = raw.dequantize()
+    elif hasattr(raw, 'to_dense'):
+        raw = raw.to_dense()
+    else:
+        raw = raw.to(torch.float32)
+
+    return raw.detach().cpu().to(torch.float32)
+
+def _prepare_pytorch_model_for_hls(model, reference_model=None):
     """
-    Convierte tensores especiales o parametrizaciones (como las de TorchAO)
-    en parámetros densos estándar de PyTorch para que hls4ml y PyYAML los procesen sin errores.
+    Extracts the already compressed/quantized weights and bias from any framework
+    (INC, TorchAO, NNI, NNCF, Quanto, ModelOptimizer)
+    and transplants them into a clean instance of the original model to avoid tracing errors in hls4ml.
     """
+    # 1. Unwrap any proprietary wrappers (e.g., PyTorchModel / PyTorchFXModel from INC)
+    unwrapped = model
+    while hasattr(unwrapped, 'model') and isinstance(getattr(unwrapped, 'model'), torch.nn.Module):
+        unwrapped = unwrapped.model
+
+    # Consolidate active parametrizations if possible (e.g., NNI)
+    for mod in unwrapped.modules():
+        if parametrize.is_parametrized(mod):
+            for param_name in list(mod.parametrizations.keys()):
+                try:
+                    parametrize.remove_parametrizations(mod, param_name, leave_parametrized=True)
+                except Exception:
+                    pass
+
+    # 2. Direct transplant of weights to the clean reference model (99% of cases)
+    if reference_model is not None:
+        clean_ref = copy.deepcopy(reference_model).cpu().eval()
+        comp_modules = dict(unwrapped.named_modules())
+
+        compatible = True
+        extracted_weights = {}
+
+        for name, ref_mod in clean_ref.named_modules():
+            if name == "":
+                continue
+            has_w = hasattr(ref_mod, 'weight') and ref_mod.weight is not None
+            has_b = hasattr(ref_mod, 'bias') and ref_mod.bias is not None
+            if not (has_w or has_b):
+                continue
+
+            if name not in comp_modules:
+                compatible = False
+                break
+
+            c_mod = comp_modules[name]
+            if has_w:
+                w_tensor = _extract_clean_tensor(getattr(c_mod, 'weight', None), module=c_mod, is_weight=True)
+                if w_tensor is None or tuple(w_tensor.shape) != tuple(ref_mod.weight.shape):
+                    compatible = False
+                    break
+                extracted_weights[(name, 'weight')] = w_tensor
+
+            if has_b:
+                b_tensor = _extract_clean_tensor(getattr(c_mod, 'bias', None), module=c_mod, is_weight=False)
+                if b_tensor is not None and tuple(b_tensor.shape) != tuple(ref_mod.bias.shape):
+                    compatible = False
+                    break
+                if b_tensor is not None:
+                    extracted_weights[(name, 'bias')] = b_tensor
+
+        if compatible and extracted_weights:
+            for (mod_name, attr_name), tensor_val in extracted_weights.items():
+                target_mod = dict(clean_ref.named_modules())[mod_name]
+                target_mod.register_parameter(
+                    attr_name,
+                    torch.nn.Parameter(tensor_val, requires_grad=False)
+                )
+            print(" [HLS] Compressed weights transplanted cleanly into vanilla PyTorch architecture.")
+            return clean_ref
+
+    # 3. Fallback for models that change layer dimensions (e.g., SVD)
     try:
-        clean_model = copy.deepcopy(model).cpu().eval()
+        clean_model = copy.deepcopy(unwrapped).cpu().eval()
     except Exception:
-        clean_model = model.cpu().eval()
+        clean_model = unwrapped.cpu().eval()
 
     for module in clean_model.modules():
-        # 1. Consolidar máscaras/parametrizaciones si el framework de pruning las dejó activas
-        if parametrize.is_parametrized(module):
-            for param_name in list(module.parametrizations.keys()):
-                parametrize.remove_parametrizations(module, param_name, leave_parametrized=True)
-
-        # 2. Convertir subclases de Tensor (TorchAO, SparseSemiStructuredTensor, etc.) a Parameter denso
-        for attr_name, param in list(module._parameters.items()):
-            if param is None:
-                continue
-            if type(param) is not torch.nn.Parameter or type(param.data) is not torch.Tensor:
-                raw_data = param.data
-                if hasattr(raw_data, 'to_dense'):
-                    dense_data = raw_data.to_dense()
-                elif hasattr(raw_data, 'dequantize'):
-                    dense_data = raw_data.dequantize()
-                else:
-                    dense_data = raw_data.to(torch.float32)
-
-                module._parameters[attr_name] = torch.nn.Parameter(
-                    dense_data.detach().cpu().to(torch.float32),
-                    requires_grad=False
-                )
-
-        # 3. Limpiar buffers si alguno es una subclase de Tensor
-        for buf_name, buf in list(module._buffers.items()):
-            if buf is not None and type(buf) is not torch.Tensor:
-                if hasattr(buf, 'to_dense'):
-                    buf = buf.to_dense()
-                elif hasattr(buf, 'dequantize'):
-                    buf = buf.dequantize()
-                module._buffers[buf_name] = buf.detach().cpu().to(torch.float32)
+        for attr_name in ['weight', 'bias']:
+            if hasattr(module, attr_name):
+                param = getattr(module, attr_name)
+                if param is None:
+                    continue
+                raw_data = getattr(param, 'data', param)
+                if type(raw_data) is not torch.Tensor:
+                    dense_data = _extract_clean_tensor(raw_data)
+                    clean_param = torch.nn.Parameter(dense_data, requires_grad=False)
+                    try:
+                        delattr(module, attr_name)
+                    except Exception:
+                        pass
+                    module.register_parameter(attr_name, clean_param)
 
     return clean_model
 
@@ -138,7 +240,7 @@ def extract_latency(project_path):
             worst_lat = root.find('.//PerformanceEstimates/SummaryOfOverallLatency/Worst-caseLatency')
             if worst_lat is not None and worst_lat.text.strip().isdigit():
                 cycles = int(worst_lat.text.strip())
-                return cycles, (cycles * 5.0) / 1000.0
+                return cycles, (cycles * 10.0) / 1000.0
         except Exception:
             pass
 
@@ -160,7 +262,7 @@ def extract_latency(project_path):
                         for p in parts[:2]:
                             if p.isdigit():
                                 cycles = int(p)
-                                return cycles, (cycles * 5.0) / 1000.0
+                                return cycles, (cycles * 10.0) / 1000.0
         except Exception:
             pass
 
@@ -195,7 +297,7 @@ def run_vivado_power_analysis(output_dir):
     
     synth_design -top myproject -part xc7z020clg400-1 -mode out_of_context -directive RuntimeOptimized
     
-    create_clock -period 5.000 -name ap_clk [get_ports ap_clk]
+    create_clock -period 10.000 -name ap_clk [get_ports ap_clk]
     report_power -file {power_rpt_path}
     report_power -file {power_xml_path} -format xml
     exit

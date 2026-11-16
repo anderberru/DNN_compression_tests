@@ -603,6 +603,7 @@ def main():
     input_shape_cache = []
     grid_results = []
     dataset_cache = {}
+    original_model_cache = {}
     for model_name, (framework_name, technique) in itertools.product(model_names, compression_configs):
         model_class = model_list.get(model_name)
         if model_class is None:
@@ -630,6 +631,8 @@ def main():
             model = _load_pretrained_model(resolved_path, model)
 
         model_original = copy.deepcopy(model)
+        if model_name not in original_model_cache:
+            original_model_cache[model_name] = model_original
 
         test_loader = build_test_loader(
             dataset,
@@ -753,7 +756,7 @@ def main():
 
     if run_vivado == True:
         print("Starting Vivado experiments...")
-        vivado_results = simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache)
+        vivado_results = simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache, original_model_cache=original_model_cache)
         _print_results_table(vivado_results)
         default_csv_output = Path("results") / f"{config_path.stem}_vivado_results.csv"
         csv_output = runtime_config.get("csv_vivado_output") or default_csv_output
