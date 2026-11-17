@@ -106,6 +106,17 @@ def hls_convert(model, full_name, input_shape=(256, 15), precision='fixed<16,6>'
 
 def _extract_clean_tensor(val, module=None, is_weight=False):
     """Extrae un tensor denso float32 desde cualquier formato cuantizado o subclase."""
+    if is_weight and val is None and module is not None and hasattr(module, 'qweight') and hasattr(module, 'in_features'):
+        try:
+            with torch.no_grad():
+                eye = torch.eye(module.in_features, dtype=torch.float32)
+                out = module(eye)
+                b = getattr(module, 'bias', None)
+                if b is not None:
+                    out = out - b.detach().cpu().to(torch.float32)
+                return out.T.contiguous().detach().cpu().to(torch.float32)
+        except Exception:
+            pass
     if val is None:
         return None
     if callable(val):

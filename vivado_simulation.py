@@ -17,6 +17,7 @@ def simulate_vivado(model_cache, grid_results, dataset_cache, input_shape_cache,
         energy_original = grid_results[i]["original_energy_consumption_J"]
         
         full_name = f"{model_name}-{framework}-{technique}"
+        full_name = full_name.replace("->", "_")
         hls_project_dir = 'hls/' + full_name
         quant_precision = 'fixed<16,6>'
 

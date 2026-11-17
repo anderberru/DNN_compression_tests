@@ -133,13 +133,38 @@ class OpenVINONNCF(Framework):
                 )
 
             # Apply pruning to the model
-            return nncf.prune(
+            pruned_model = nncf.prune(
                 model,
                 mode=prune_mode,
                 ratio=ratio,
                 examples_inputs=examples_inputs,
                 ignored_scope=ignored_scope
             )
+
+            # from nncf.torch import strip
+            # return strip(pruned_model, example_input=examples_inputs)
+
+            with torch.no_grad():
+                for name, hook_mod in pruned_model.named_modules():
+                    if hasattr(hook_mod, "binary_mask"):
+                        for p_name, param in pruned_model.named_parameters():
+                            if p_name.endswith(".weight") and p_name.replace(".weight", "") in name.replace(":", "."):
+                                if param.shape == hook_mod.binary_mask.shape:
+                                    param.data.mul_(hook_mod.binary_mask.to(param.device, param.dtype))
+
+            # 2. Eliminar el wrapper y los hooks de NNCF de toda la jerarquía de módulos
+            import copy
+            for mod in pruned_model.modules():
+                if "forward" in mod.__dict__:
+                    del mod.__dict__["forward"]
+                for attr in ("_nncf", "nncf", "hook_storage"):
+                    if hasattr(mod, attr):
+                        delattr(mod, attr)
+
+            # Devolver una copia limpia de PyTorch puro (sin HookExecutorMode ni wrapper.py)
+            clean_model = copy.deepcopy(model)
+            clean_model.load_state_dict(pruned_model.state_dict(), strict=False)
+            return clean_model
 
         else:
             raise ValueError(

@@ -11,6 +11,14 @@ class Torchao(Framework):
         super().__init__(technique=technique, **kwargs)
 
     def compress(self, model, technique, **kwargs):
+        import torch
+
+        def _torchao_linear_filter(module, fqn):
+            return (
+                isinstance(module, torch.nn.Linear)
+                and module.in_features > 1
+                and module.out_features > 1
+            )
 
         from torchao.quantization import (
             quantize_,
@@ -26,13 +34,13 @@ class Torchao(Framework):
 
         if technique == "int8":
             config = Int8DynamicActivationInt8WeightConfig()
-            quantize_(model, config)
+            quantize_(model, config, filter_fn=_torchao_linear_filter)
         elif technique == "float8": # CUDA only
             config = Float8DynamicActivationFloat8WeightConfig()
-            quantize_(model, config)
+            quantize_(model, config, filter_fn=_torchao_linear_filter)
         elif technique == "float8_weight_only":
             config = Float8WeightOnlyConfig()
-            quantize_(model, config)
+            quantize_(model, config, filter_fn=_torchao_linear_filter)
 
         elif technique in {"prune", "pruning", "semi_sparse", "2:4_sparsity"}: # CUDA only
             # Applies semi-structured sparsity (2:4)
