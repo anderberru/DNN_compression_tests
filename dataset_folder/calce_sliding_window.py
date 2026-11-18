@@ -214,4 +214,6 @@ def load_dataset(split: str = "test", window_size: int = 5, flatten: bool = True
     scaler = joblib.load('dataset_folder/scaler_mlp.joblib')
     X = scaler.transform(X)
 
-    return MyDataset(features=X, labels=y, split="all")
+    ds = MyDataset(features=X, labels=y, split="all")
+    ds.split = "test"
+    return ds

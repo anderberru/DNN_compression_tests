@@ -19,4 +19,4 @@ model_params:
     input_width: 64
     kernel_size: [1, 5]
 
-vivado: True
+vivado: False

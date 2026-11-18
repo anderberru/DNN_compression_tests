@@ -1,2 +1,3 @@
-model,framework,technique,original_rmse,compressed_rmse,original_energy_consumption_J,compressed_energy_consumption_J,original_latency_ms,compressed_latency_ms,rmse_increase,speedup_factor
-MyMLP_HLS,Uncompressed,False,0.07076668649749554,0.07076668649749554,0.00017588653846153848,0.00013932403846153845,0.004711836539592276,0.00459247307932086,0.0,1.025991107233462
+model,framework,technique,sparsity_pct,original_rmse,compressed_rmse,original_energy_consumption_J,compressed_energy_consumption_J,original_latency_ms,compressed_latency_ms,rmse_increase,speedup_factor
+MyMLP_HLS,Uncompressed,False,0.0,0.044983111766578716,0.044983111766578716,0.0001663523754568186,0.0001441642623581458,0.005726908059387352,0.005384458549872282,0.0,1.0635996184840522
+MyMLP,Uncompressed,False,0.0,0.044983111766578716,0.044983111766578716,0.00014418772840930948,0.00013345758799769184,0.004804419503724998,0.004498360261893748,0.0,1.068037956947095
