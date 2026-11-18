@@ -1,0 +1,125 @@
+model:
+  - MyMLP_HLS
+model_file:
+  - models/best_mlp128_soh.pth
+technique:
+  - int8
+  - int8
+  - int4
+  - float8_weight_only
+  - float8
+
+  - wanda
+  - l1
+  - l2
+  - fpgm
+  - magnitude
+  - prune
+
+  # 1. Torchao (wanda) x Quantization (Torchao + INC)
+  - wanda,int8
+  - wanda,float8_weight_only
+  - wanda,int8
+  - wanda,int4
+  - wanda,float8
+  # 2. MicrosoftNNI (l1) x Quantization (Torchao + INC)
+  - l1,int8
+  - l1,float8_weight_only
+  - l1,int8
+  - l1,int4
+  - l1,float8
+  # 3. MicrosoftNNI (l2) x Quantization (Torchao + INC)
+  - l2,int8
+  - l2,float8_weight_only
+  - l2,int8
+  - l2,int4
+  - l2,float8
+  # 4. MicrosoftNNI (fpgm) x Quantization (Torchao + INC)
+  - fpgm,int8
+  - fpgm,float8_weight_only
+  - fpgm,int8
+  - fpgm,int4
+  - fpgm,float8
+  # 5. OpenVINONNCF (magnitude) x Quantization (Torchao + INC)
+  - magnitude,int8
+  - magnitude,float8_weight_only
+  - magnitude,int8
+  - magnitude,int4
+  - magnitude,float8
+  # 6. ModelOptimizer (prune) x Quantization (Torchao + INC)
+  - prune,int8
+  - prune,float8_weight_only
+  - prune,int8
+  - prune,int4
+  - prune,float8
+  # 7. LowRankFactorization (svd) x Quantization (Torchao)
+  - svd,int8
+  - svd,float8_weight_only
+framework:
+  - IntelNeuralCompressor
+  - Torchao
+  - IntelNeuralCompressor
+  - Torchao
+  - IntelNeuralCompressor
+
+  - Torchao
+  - MicrosoftNNI
+  - MicrosoftNNI
+  - MicrosoftNNI
+  - OpenVINONNCF
+  - ModelOptimizer
+
+  # 1. Torchao (wanda)
+  - Torchao,Torchao
+  - Torchao,Torchao
+  - Torchao,IntelNeuralCompressor
+  - Torchao,IntelNeuralCompressor
+  - Torchao,IntelNeuralCompressor
+  # 2. MicrosoftNNI (l1)
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  # 3. MicrosoftNNI (l2)
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  # 4. MicrosoftNNI (fpgm)
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,Torchao
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  - MicrosoftNNI,IntelNeuralCompressor
+  # 5. OpenVINONNCF (magnitude)
+  - OpenVINONNCF,Torchao
+  - OpenVINONNCF,Torchao
+  - OpenVINONNCF,IntelNeuralCompressor
+  - OpenVINONNCF,IntelNeuralCompressor
+  - OpenVINONNCF,IntelNeuralCompressor
+  # 6. ModelOptimizer (prune)
+  - ModelOptimizer,Torchao
+  - ModelOptimizer,Torchao
+  - ModelOptimizer,IntelNeuralCompressor
+  - ModelOptimizer,IntelNeuralCompressor
+  - ModelOptimizer,IntelNeuralCompressor
+  # 7. LowRankFactorization (svd)
+  - LowRankFactorization,Torchao
+  - LowRankFactorization,Torchao
+
+dataset_path:
+  MyMLP_HLS: dataset_folder/calce_sliding_window.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP_HLS:
+    input_dim: 15
+    hidden_dim: 128
+    output_dim: 1
+    dropout_rate: 0.0
+
+vivado: True
+

@@ -1,0 +1,3 @@
+model,framework,technique,quant_precision,original_rmse,compressed_rmse,rmse_increase,original_latency_ms,compressed_latency_ms,speedup_factor,original_energy_joules,compressed_energy_joules,compressed_power_w
+MyMLP_HLS,LowRankFactorization,svd,"fixed<16,6>fixed<16,6>",427.47329980641723,791.3072,363.833890134989,0.004855306020059684,0.00151,3.2154344503706516,0.00012960684747066745,1.101545e-05,7.295
+CNNRULPredictor_HLS,LowRankFactorization,svd,"fixed<16,6>fixed<16,6>",248.33746019672947,783.3513,535.0138581626455,0.013553096941849117,0.11395999999999999,0.1189285445932706,0.00023224754760530871,0.00014358959999999997,1.26
