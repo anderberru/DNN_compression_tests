@@ -1,8 +1,6 @@
 model:
   - MyMLP_HLS
-  - MyMLP
 model_file:
-  - models/best_mlp_soh_bueno.pth
   - models/best_mlp_soh_bueno.pth
 technique:
   - no
@@ -10,7 +8,6 @@ framework:
   - Uncompressed
 dataset_path:
   MyMLP_HLS: dataset_folder/calce_sliding_window.py
-  MyMLP: dataset_folder/calce_sliding_window.py
 
 dataset_class: MyDataset
 
@@ -20,10 +17,5 @@ model_params:
     hidden_dim: 128
     output_dim: 1
     dropout_rate: 0.0
-  MyMLP:
-    input_dim: 15
-    hidden_dim: 128
-    output_dim: 1
-    dropout_rate: 0.0
 
-vivado: False
+vivado: True
