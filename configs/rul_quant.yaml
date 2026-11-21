@@ -1,0 +1,39 @@
+model:
+  - MyMLP_HLS
+  - CNNRULPredictor_HLS
+model_file:
+  - models/rul_files/best_mlp_rul.pth
+  - models/rul_files/cnn_rul_predictor3channel64.pth
+technique:
+  - int8
+  - int8
+  - int4
+  - float8_weight_only
+  - float8
+framework:
+  - IntelNeuralCompressor
+  - Torchao
+  - IntelNeuralCompressor
+  - Torchao
+  - IntelNeuralCompressor
+  
+dataset_path:
+  MyMLP_HLS: dataset_folder/calce_sliding_window_mlp_rul.py
+  CNNRULPredictor_HLS: dataset_folder/calce_sliding_window_cnn_rul.py
+
+dataset_class: MyDataset
+
+model_params:
+  MyMLP_HLS:
+    input_dim: 15
+    hidden_dim: 128
+    output_dim: 1
+    dropout_rate: 0.0
+  CNNRULPredictor_HLS:
+    in_channels: 3
+    channels: 3
+    input_height: 5
+    input_width: 64
+    kernel_size: [1, 5]
+
+vivado: True

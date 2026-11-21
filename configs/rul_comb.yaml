@@ -5,12 +5,6 @@ model_file:
   - models/rul_files/best_mlp_rul.pth
   - models/rul_files/cnn_rul_predictor3channel64.pth
 technique:
-  - int8
-  - int8
-  - int4
-  - float8_weight_only
-  - float8
-
   # 1. Torchao (wanda) x Quantization (Torchao + INC)
   - wanda,int8
   - wanda,float8_weight_only
@@ -51,12 +45,6 @@ technique:
   - svd,int8
   - svd,float8_weight_only
 framework:
-  - IntelNeuralCompressor
-  - Torchao
-  - IntelNeuralCompressor
-  - Torchao
-  - IntelNeuralCompressor
-
   # 1. Torchao (wanda)
   - Torchao,Torchao
   - Torchao,Torchao

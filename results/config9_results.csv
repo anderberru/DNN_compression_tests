@@ -1,2 +1,0 @@
-model,framework,technique,sparsity_pct,original_rmse,compressed_rmse,original_energy_consumption_J,compressed_energy_consumption_J,original_latency_ms,compressed_latency_ms,rmse_increase,speedup_factor
-CNNRULPredictor_HLS,Uncompressed,False,0.0,0.025645972176915575,0.025645972176915575,0.00028158972879399884,0.00026041142527409117,0.014484416041788982,0.013830172148274304,0.0,1.0473055495260999
